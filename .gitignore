@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+
+# 环境变量与密钥(绝不提交)
+.env
+.env.local
+*.key
+
+# 前端
+node_modules/
+dist/
+.vite/
+
+# 运行时数据(会话、SQLite、上传文档、记忆文件)
+data/
+*.sqlite
+*.db
+*.jsonl
+
+# IDE / OS
+.DS_Store
+.idea/
+.vscode/
