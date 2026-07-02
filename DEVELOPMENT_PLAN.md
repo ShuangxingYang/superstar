@@ -26,7 +26,7 @@ Superstar 不是"问答机器人",而是一个**能替你做事**的本地 Agent
 
 两条关键简化(来自调研):
 1. **代码工作区用 `grep`/`read` 即可,不建向量索引**(Claude Code 的做法:模型自己懂代码结构)。**向量/RAG 只服务"文档知识库"**,与代码工作区分离。
-2. **会话用 JSONL 文件追加存储**(可回放、可 debug、比数据库轻),不上 ORM;仅"应用配置"用 SQLite 结构化存。
+2. **会话用 JSONL 文件追加存储**(可回放、可 debug、比数据库轻),不上 ORM;应用配置用 `data/config.json`(仿 Claude Code `~/.claude/*.json`、OpenClaw `~/.openclaw/openclaw.json`)。**全后端零数据库依赖**。
 
 ---
 
@@ -86,7 +86,7 @@ Superstar 不是"问答机器人",而是一个**能替你做事**的本地 Agent
 | 前端 | React + Vite + TypeScript + shadcn/ui | 三栏聊天工作台 |
 | 流式 | SSE(`data: json\n\n` + StreamingResponse) | 前端 fetch + ReadableStream 消费 |
 | 会话存储 | JSONL 文件(追加式,可回放) | 每会话一个 .jsonl |
-| 应用配置 | SQLite | API 服务商/安全/参数,可查询、热生效 |
+| 应用配置 | data/config.json | API 服务商/安全/参数,读进内存、热生效;零数据库 |
 | 向量库 | Qdrant(Docker) | 仅服务文档知识库,代码不建索引 |
 | embedding | DashScope text-embedding-v3(1024维) | 配置可改 |
 | IM(二期) | 飞书 lark-oapi 长连接 | 免公网,快速 ACK + 卡片流式 |
@@ -121,13 +121,13 @@ superstar/
 │       │   ├── tools/{fs,shell,rag}.py   # 工具实现
 │       │   └── subagent.py       # 子 Agent 隔离(P6)
 │       ├── services/
-│       │   ├── rag_store.py      # RagStore:收敛 embed + Qdrant
+│       │   ├── config_store.py    # data/config.json 读写 + 内存缓存(应用配置)
+│       │   ├── rag_store.py       # RagStore:收敛 embed + Qdrant
 │       │   ├── security.py       # 沙箱 + 命令分级 + 危险判定
 │       │   ├── memory.py         # profile.md / soul.md 读写 + 注入
 │       │   └── session_store.py  # JSONL 会话读写
-│       ├── db/                   # SQLite(仅配置)：AppSetting 表
 │       ├── models/schemas.py     # Pydantic 请求/响应 + SSE event
-│       └── config.py             # pydantic-settings:启动必需项
+│       └── config.py             # pydantic-settings:启动必需项(端口/数据目录/QDRANT_URL)
 ├── frontend/
 │   └── src/
 │       ├── components/           # ChatPanel/MessageBubble/ToolCallCard/ApprovalDialog/
@@ -135,7 +135,7 @@ superstar/
 │       ├── hooks/useChatStream.ts
 │       ├── lib/api.ts
 │       └── types.ts
-└── data/                         # SQLite、会话 jsonl、profile.md、soul.md、上传文档
+└── data/                         # config.json、会话 jsonl、profile.md、soul.md、上传文档
 ```
 
 ---
@@ -157,16 +157,16 @@ superstar/
 - **人在环路**:approval_required → 前端弹窗(写文件带 diff)→ 批准 → 恢复执行。
 
 ### 配置动态化(不写死)
-- 启动必需项(端口/DB/QDRANT_URL)走 `.env`;业务配置(LLM/embedding/白黑名单/工作区/参数)存 SQLite `AppSetting`,配置页 CRUD **热生效**。
+- 启动必需项(端口/数据目录/QDRANT_URL)走 `.env`;业务配置(LLM/embedding/白黑名单/工作区/参数)存 `data/config.json`,配置页 CRUD **热生效**。
 - `core/llm.py` 提供 `get_llm_client()`,读当前配置建客户端、配置变更后重建缓存(替代写死读 env)。
 - `POST /api/settings/test` 用填入配置发最小请求验证连通。
-- key 存本地 SQLite;API 返回时脱敏(`sk-***1234`);日志绝不打印 key。
+- key 存本地 `config.json`;API 返回时脱敏(`sk-***1234`);日志绝不打印 key。
 
 ### 记忆/个性化(memory.py)
 - `profile.md`(用户画像)+ `soul.md`(Agent 准则),本地 markdown。开会话注入 system prompt;`update_profile`/`update_soul` 工具让 Agent 沉淀。反思式自我完善(会话结束回顾)放二期。
 
 ### 会话存储(session_store.py)
-- 每会话一个 JSONL 文件(消息逐行追加),可回放调试。会话索引 + 元数据存 SQLite 或一个 index.json。
+- 每会话一个 JSONL 文件(消息逐行追加),可回放调试。会话索引 + 元数据存一个 index.json。
 
 ---
 
@@ -174,7 +174,7 @@ superstar/
 
 ### 第一版(本地 Web 最小可用闭环)—— 6 个里程碑,逐个跑通再下一个
 
-- **P1 骨架 + 配置**:FastAPI 分层 + SQLite AppSetting + settings 路由(读写 + 测试连接)+ 动态 llm_client + 单轮 `/api/chat`。**验证**:存 LLM 配置→测试连接通→单轮对话走该配置。
+- **P1 骨架 + 配置**:FastAPI 分层 + config.json 存储 + settings 路由(读写 + 测试连接)+ 动态 llm_client + 单轮 `/api/chat`。**验证**:存 LLM 配置→测试连接通→单轮对话走该配置。
 - **P2 会话**:JSONL session_store + 会话 CRUD + 多轮上下文。**验证**:建会话→多轮→落盘→重启还在。
 - **P3 工具 + 安全**:fs/shell/rag 工具 + security(沙箱/白黑灰)+ approval(先命令行模拟)+ RagStore + 知识库上传检索。**验证**:grep 代码、读文件、写文件触发确认、`../../`越界与 rm -rf 被拒、检索带来源。
 - **P4 流式**:run_agent_streaming + SSE + typed event。**验证**:`curl -N` 看逐 token + tool + approval 事件流。
