@@ -109,3 +109,50 @@ def append_message(sid: str, message: dict) -> None:
                     entry["title"] = _truncate(message.get("content", ""))
                 break
         atomic_json.write_json_atomic(_index_path(), index)
+
+
+def rename(sid: str, title: str) -> None:
+    """重命名:改 index 条目。"""
+    with _index_lock:
+        index = atomic_json.read_json(_index_path(), [])
+        for entry in index:
+            if entry["id"] == sid:
+                entry["title"] = title
+                atomic_json.write_json_atomic(_index_path(), index)
+                logger.info("重命名会话: sid=%s", sid)
+                return
+    raise SessionNotFound(sid)
+
+
+def delete(sid: str) -> None:
+    """删除:先去 index 条目(提交点),再删文件 → 崩溃只留无害孤儿,绝不留幽灵。"""
+    with _index_lock:
+        index = atomic_json.read_json(_index_path(), [])
+        kept = [e for e in index if e["id"] != sid]
+        if len(kept) == len(index):
+            raise SessionNotFound(sid)
+        atomic_json.write_json_atomic(_index_path(), kept)
+    _session_path(sid).unlink(missing_ok=True)
+    logger.info("删除会话: sid=%s", sid)
+
+
+def rebuild_index() -> None:
+    """兜底:扫目录重建 index(index 丢失/损坏时)。title 回退首条 user 消息,自定义重命名会丢。"""
+    entries = []
+    for path in sorted(_sessions_dir().glob("*.jsonl")):
+        sid = path.stem
+        title = ""
+        for msg in read_messages(sid):
+            if msg.get("role") == "user":
+                title = _truncate(msg.get("content", ""))
+                break
+        ts = datetime.fromtimestamp(path.stat().st_mtime, timezone.utc).isoformat(timespec="seconds")
+        entries.append({"id": sid, "title": title, "created_at": ts, "updated_at": ts})
+    with _index_lock:
+        atomic_json.write_json_atomic(_index_path(), entries)
+    logger.info("重建 index: 恢复 %d 个会话", len(entries))
+
+
+def _fit_context(messages: list[dict]) -> list[dict]:
+    """裁剪钩子:P1 全量喂,原样返回;真超长了再接 M12。"""
+    return messages
