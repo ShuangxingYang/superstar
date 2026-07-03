@@ -12,3 +12,13 @@ dependencies = [
     "python-dotenv>=1.2.2",
     "uvicorn[standard]>=0.49.0",
 ]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]
+
+[tool.pytest.ini_options]
+# 让 pytest 从 backend/ 根目录解析 import(否则测试里 `import app` 会找不到,
+# 因为 app 没作为已安装包,默认只有 tests/ 在搜索路径上)。"." 相对 rootdir=backend/。
+pythonpath = ["."]
