@@ -15,6 +15,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routes import chat as chat_routes
+from app.api.routes import session as session_routes
 from app.api.routes import settings as settings_routes
 
 
@@ -49,6 +50,7 @@ app.add_middleware(
 # 注册路由(后续里程碑逐个挂上来)
 app.include_router(settings_routes.router)
 app.include_router(chat_routes.router)
+app.include_router(session_routes.router)
 
 
 @app.get("/health")
