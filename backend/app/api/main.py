@@ -2,12 +2,13 @@
 app/api/main.py —— FastAPI 应用实例(整个后端的入口装配点)
 
 职责:
-  1. 创建 FastAPI 实例
-  2. 配 CORS(允许前端跨域调用)
-  3. 注册各个路由(routes/ 下的模块,后续里程碑逐个挂上来)
-  4. 提供一个 /health 健康检查(确认服务活着)
+  1. 配置日志(启动时一次)
+  2. 创建 FastAPI 实例
+  3. 配 CORS(允许前端跨域调用)
+  4. 注册各个路由(routes/ 下的模块,后续里程碑逐个挂上来)
+  5. 提供一个 /health 健康检查(确认服务活着)
 
-现在是最小版:只有 /health。P1 后面会挂 settings 路由、chat 路由。
+当前已挂:settings 路由、chat 路由。
 """
 
 from fastapi import FastAPI
@@ -15,6 +16,22 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routes import chat as chat_routes
 from app.api.routes import settings as settings_routes
+
+
+def _setup_logging() -> None:
+    """统一日志配置:级别 + 格式,程序启动时配一次。
+    - level=INFO:放开各模块的 logger.info(默认级别是 WARNING,info 会被丢弃)
+    - format 里的 %(name)s 就是各文件 getLogger(__name__) 的模块名,便于定位来源
+    P0 先只输出到控制台(stderr);写文件/可配级别留到 P4 打磨。"""
+    import logging
+
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    )
+
+
+_setup_logging()
 
 app = FastAPI(title="Superstar Backend", version="0.1.0")
 
