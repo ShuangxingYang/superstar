@@ -1,18 +1,57 @@
-// 与后端 chat.py 的事件协议对齐
+// 与后端 chat.py / session.py 的协议对齐
 export type ChatEvent =
+  | { type: 'session'; session_id: string; title: string }
   | { type: 'text'; content: string }
   | { type: 'done' }
   | { type: 'error'; message: string }
 
-// fetch + ReadableStream 读 SSE:按空行切事件、剥掉 data: 前缀、JSON.parse
+export type SessionMeta = {
+  id: string
+  title: string
+  created_at: string
+  updated_at: string
+}
+
+export type ChatMessage = { role: 'user' | 'assistant'; content: string }
+
+// ---- 会话 CRUD ----
+export async function listSessions(): Promise<SessionMeta[]> {
+  const r = await fetch('/api/sessions')
+  if (!r.ok) throw new Error('拉取会话列表失败')
+  return r.json()
+}
+
+export async function getSession(sid: string): Promise<ChatMessage[]> {
+  const r = await fetch(`/api/sessions/${sid}`)
+  if (!r.ok) throw new Error('拉取会话历史失败')
+  return (await r.json()).messages
+}
+
+export async function renameSession(sid: string, title: string): Promise<SessionMeta> {
+  const r = await fetch(`/api/sessions/${sid}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title }),
+  })
+  if (!r.ok) throw new Error('重命名失败')
+  return r.json()
+}
+
+export async function deleteSession(sid: string): Promise<void> {
+  const r = await fetch(`/api/sessions/${sid}`, { method: 'DELETE' })
+  if (!r.ok) throw new Error('删除失败')
+}
+
+// ---- 流式对话(带可选 sessionId;不传 = 懒创建) ----
 export async function streamChat(
   message: string,
   onEvent: (e: ChatEvent) => void,
+  sessionId?: string,
 ): Promise<void> {
   const resp = await fetch('/api/chat/stream', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ message }),
+    body: JSON.stringify({ message, session_id: sessionId ?? null }),
   })
   if (!resp.body) throw new Error('无响应体')
 
