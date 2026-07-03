@@ -88,3 +88,24 @@ def list_sessions() -> list[dict]:
     """读 index,按最近活跃倒序。"""
     index = atomic_json.read_json(_index_path(), [])
     return sorted(index, key=lambda s: s["updated_at"], reverse=True)
+
+
+def append_message(sid: str, message: dict) -> None:
+    """追加一条消息行;首条 user 消息落 title,每次 bump updated_at。"""
+    path = _session_path(sid)
+    if not path.exists():
+        raise SessionNotFound(sid)
+    now = _now()
+    # .jsonl 追加写:逐行 append,最坏只写坏最后一行(读时跳过),无需原子写
+    with path.open("a", encoding="utf-8") as f:
+        f.write(json.dumps({"ts": now, "message": message}, ensure_ascii=False) + "\n")
+    # index 是缓存,读-改-写走锁 + 原子写
+    with _index_lock:
+        index = atomic_json.read_json(_index_path(), [])
+        for entry in index:
+            if entry["id"] == sid:
+                entry["updated_at"] = now
+                if not entry["title"] and message.get("role") == "user":
+                    entry["title"] = _truncate(message.get("content", ""))
+                break
+        atomic_json.write_json_atomic(_index_path(), index)
