@@ -13,6 +13,8 @@ app/api/main.py —— FastAPI 应用实例(整个后端的入口装配点)
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.routes import settings as settings_routes
+
 app = FastAPI(title="Superstar Backend", version="0.1.0")
 
 # CORS: 前端(Vite dev 跑在 5173)和后端(8000)端口不同 = 跨域,
@@ -25,6 +27,9 @@ app.add_middleware(
     allow_headers=["*"],
     allow_credentials=True,
 )
+
+# 注册路由(后续里程碑逐个挂上来)
+app.include_router(settings_routes.router)
 
 
 @app.get("/health")
