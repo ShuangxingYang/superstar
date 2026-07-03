@@ -88,9 +88,22 @@ class TestConnectionResult(BaseModel):
     error: str = ""
 
 
-# ---- 对话(P0 单轮;session 在 P1 引入) ----
+# ---- 对话(P1:带 session_id 多轮) ----
 class ChatRequest(BaseModel):
     message: str
+    session_id: str | None = None   # 不传 = 懒创建;向后兼容 P0 老调用
+
+
+# ---- 会话 ----
+class SessionMeta(BaseModel):
+    id: str
+    title: str = ""
+    created_at: str
+    updated_at: str
+
+
+class RenameRequest(BaseModel):
+    title: str
 
 
 # ---- key 脱敏 ----

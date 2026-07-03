@@ -25,3 +25,14 @@ def test_config_update_all_optional():
     u = schemas.ConfigUpdate(llm=schemas.LLMUpdate(model="ep-x"))
     dumped = u.model_dump(exclude_none=True)
     assert dumped == {"llm": {"model": "ep-x"}}
+
+
+def test_chat_request_session_id_optional():
+    assert schemas.ChatRequest(message="hi").session_id is None      # 不传 → None(向后兼容)
+    assert schemas.ChatRequest(message="hi", session_id="ab").session_id == "ab"
+
+
+def test_session_meta_and_rename():
+    m = schemas.SessionMeta(id="ab", created_at="t0", updated_at="t1")
+    assert m.title == "" and m.id == "ab"                            # title 默认空
+    assert schemas.RenameRequest(title="新名").title == "新名"
