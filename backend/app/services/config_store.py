@@ -11,14 +11,13 @@ config_store.py —— 业务配置读写(存 data/config.json)
   - 缺文件/缺字段用 DEFAULTS 兜底(向后兼容:以后加新字段,老 config.json 不会因缺字段报错)
 """
 
-import json
 import logging
-import os
 import threading
 from copy import deepcopy
 from pathlib import Path
 
 from app.config import settings
+from app.services import atomic_json
 
 logger = logging.getLogger(__name__)
 
@@ -65,12 +64,11 @@ def _deep_merge(base: dict, patch: dict) -> dict:
 
 
 def load() -> dict:
-    """从磁盘读;不存在用 DEFAULTS。读到的再与 DEFAULTS 深合并,补齐缺失字段(向后兼容)。"""
-    path = _config_path()
-    if path.exists():
-        raw = json.loads(path.read_text(encoding="utf-8"))
-        return _deep_merge(DEFAULTS, raw)
-    return deepcopy(DEFAULTS)
+    """从磁盘读;不存在/坏了用 DEFAULTS。读到的再与 DEFAULTS 深合并,补齐缺失字段(向后兼容)。"""
+    raw = atomic_json.read_json(_config_path(), None)
+    if raw is None:
+        return deepcopy(DEFAULTS)
+    return _deep_merge(DEFAULTS, raw)
 
 
 def get() -> dict:
@@ -88,19 +86,9 @@ def update(partial: dict) -> dict:
     with _lock:
         current = _cache if _cache is not None else load()
         merged = _deep_merge(current, partial)
-        path = _config_path()
-        path.parent.mkdir(parents=True, exist_ok=True)
-        # 原子写:先完整写到同目录的临时文件,再用 os.replace 原子改名覆盖目标。
-        # 好处:写 .tmp 途中崩溃只会写坏 .tmp,目标 config.json 要么是旧的完整内容、
-        # 要么是新的完整内容,绝不会被读到"写了一半"的残缺 JSON。
-        # (rename 只有在同一文件系统内才原子,所以临时文件必须和目标同目录。)
-        tmp = path.with_name(path.name + ".tmp")
-        try:
-            tmp.write_text(json.dumps(merged, ensure_ascii=False, indent=2), encoding="utf-8")
-            os.replace(tmp, path)  # 原子替换;os.replace 目标已存在也能覆盖,且跨平台一致
-        except Exception:
-            tmp.unlink(missing_ok=True)  # 失败别留脏的临时文件
-            raise
+        # 原子写抽到 atomic_json 复用:写 .tmp 途中崩溃只会写坏 .tmp,目标 config.json
+        # 要么旧内容、要么新内容,绝不会被读到"写了一半"的残缺 JSON。
+        atomic_json.write_json_atomic(_config_path(), merged)
         _cache = merged
         # 只记录改了哪些分组,绝不打印字段值(避免泄露 api_key)
         logger.info("配置更新: sections=%s", list(partial.keys()))
