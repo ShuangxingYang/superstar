@@ -13,6 +13,7 @@ config_store.py —— 业务配置读写(存 data/config.json)
 
 import json
 import logging
+import os
 import threading
 from copy import deepcopy
 from pathlib import Path
@@ -89,7 +90,17 @@ def update(partial: dict) -> dict:
         merged = _deep_merge(current, partial)
         path = _config_path()
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(merged, ensure_ascii=False, indent=2), encoding="utf-8")
+        # 原子写:先完整写到同目录的临时文件,再用 os.replace 原子改名覆盖目标。
+        # 好处:写 .tmp 途中崩溃只会写坏 .tmp,目标 config.json 要么是旧的完整内容、
+        # 要么是新的完整内容,绝不会被读到"写了一半"的残缺 JSON。
+        # (rename 只有在同一文件系统内才原子,所以临时文件必须和目标同目录。)
+        tmp = path.with_name(path.name + ".tmp")
+        try:
+            tmp.write_text(json.dumps(merged, ensure_ascii=False, indent=2), encoding="utf-8")
+            os.replace(tmp, path)  # 原子替换;os.replace 目标已存在也能覆盖,且跨平台一致
+        except Exception:
+            tmp.unlink(missing_ok=True)  # 失败别留脏的临时文件
+            raise
         _cache = merged
         # 只记录改了哪些分组,绝不打印字段值(避免泄露 api_key)
         logger.info("配置更新: sections=%s", list(partial.keys()))
