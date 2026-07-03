@@ -1,0 +1,9 @@
+.app { max-width: 720px; margin: 0 auto; padding: 24px; font-family: system-ui, sans-serif; }
+.messages { display: flex; flex-direction: column; gap: 12px; margin: 16px 0; min-height: 300px; }
+.msg { line-height: 1.6; white-space: pre-wrap; }
+.msg.user { color: #1a1a1a; }
+.msg.assistant { color: #0b6; }
+.composer { display: flex; gap: 8px; }
+.composer input { flex: 1; padding: 10px; border: 1px solid #ccc; border-radius: 8px; }
+.composer button { padding: 10px 20px; border: 0; border-radius: 8px; background: #0b6; color: #fff; cursor: pointer; }
+.composer button:disabled { background: #aaa; cursor: not-allowed; }
