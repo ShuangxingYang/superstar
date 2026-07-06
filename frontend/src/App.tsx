@@ -1,6 +1,7 @@
 import { useState } from 'react'
 
 import SessionList from './components/SessionList'
+import ToolCallCard from './components/ToolCallCard'
 import { useChatStream } from './hooks/useChatStream'
 import './App.css'
 
@@ -38,12 +39,16 @@ export default function App() {
       <div className="app">
         <h1>Superstar</h1>
         <div className="messages">
-          {messages.map((m, i) => (
-            <div key={i} className={`msg ${m.role}`}>
-              <b>{m.role === 'user' ? '你' : 'AI'}:</b> {m.content}
-              {streaming && i === messages.length - 1 && m.role === 'assistant' ? ' ▋' : ''}
-            </div>
-          ))}
+          {messages.map((it, i) =>
+            it.kind === 'tool' ? (
+              <ToolCallCard key={i} name={it.name} args={it.args} result={it.result} />
+            ) : (
+              <div key={i} className={`msg ${it.role}`}>
+                <b>{it.role === 'user' ? '你' : 'AI'}:</b> {it.content}
+                {streaming && i === messages.length - 1 && it.role === 'assistant' ? ' ▋' : ''}
+              </div>
+            ),
+          )}
         </div>
         <div className="composer">
           <input

@@ -22,3 +22,43 @@
 .session-item .actions button { border: 0; background: transparent; cursor: pointer; font-size: 13px; }
 .session-item input { width: 100%; padding: 4px; border: 1px solid #0b6; border-radius: 6px; }
 .app { flex: 1; max-width: 720px; }
+
+/* 工具调用卡片:让用户「看见 Agent 在干什么」,默认折叠只显示摘要 */
+.tool-card {
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  margin: 6px 0;
+  background: #f6f8fa;
+  font-size: 13px;
+  overflow: hidden;
+}
+.tool-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  cursor: pointer;
+  user-select: none;
+}
+.tool-name { font-weight: 600; white-space: nowrap; }
+.tool-summary {
+  flex: 1;
+  color: #57606a;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tool-toggle { color: #57606a; }
+.tool-body { border-top: 1px solid #d0d7de; padding: 8px 10px; }
+.tool-label { font-weight: 600; color: #57606a; margin: 4px 0 2px; }
+.tool-body pre {
+  margin: 0;
+  padding: 6px 8px;
+  background: #fff;
+  border: 1px solid #eaeef2;
+  border-radius: 4px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 320px;
+  overflow: auto;
+}
