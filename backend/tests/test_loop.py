@@ -113,3 +113,40 @@ def test_max_iters_exhausted(ready, monkeypatch):
     events = list(loop.run_agent_streaming(ready))
     assert events[-1]["type"] == "error"
     assert "最大步数" in events[-1]["message"]
+
+
+# ============ 悬空 tool_call 清理(修复「会话被毒死」的 400)============
+def _tc_msg(id_, name="grep", args="{}"):
+    return {"role": "assistant", "content": None,
+            "tool_calls": [{"id": id_, "type": "function",
+                            "function": {"name": name, "arguments": args}}]}
+
+
+def test_prune_drops_dangling_tool_call():
+    # assistant 发起了 tool_call 但后面没有 tool 结果 → 整条丢弃(content 也为空)
+    msgs = [{"role": "user", "content": "hi"}, _tc_msg("a"), {"role": "user", "content": "再来"}]
+    out = loop._prune_dangling_tool_calls(msgs)
+    assert out == [{"role": "user", "content": "hi"}, {"role": "user", "content": "再来"}]
+
+
+def test_prune_keeps_valid_pair_and_drops_orphan():
+    msgs = [
+        {"role": "user", "content": "hi"},
+        _tc_msg("a"),
+        {"role": "tool", "tool_call_id": "a", "content": "结果"},        # 有效配对 → 留
+        {"role": "tool", "tool_call_id": "zzz", "content": "孤儿"},       # 无归属 → 丢
+    ]
+    out = loop._prune_dangling_tool_calls(msgs)
+    assert out == [
+        {"role": "user", "content": "hi"},
+        _tc_msg("a"),
+        {"role": "tool", "tool_call_id": "a", "content": "结果"},
+    ]
+
+
+def test_prune_keeps_content_when_tool_calls_dangling():
+    # assistant 既有正文又有悬空 tool_calls → 保留正文,剥掉悬空调用
+    msgs = [{"role": "assistant", "content": "我想想", "tool_calls":
+             [{"id": "a", "type": "function", "function": {"name": "grep", "arguments": "{}"}}]}]
+    out = loop._prune_dangling_tool_calls(msgs)
+    assert out == [{"role": "assistant", "content": "我想想"}]

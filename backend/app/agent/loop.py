@@ -22,6 +22,37 @@ SYSTEM_PROMPT = (
 )
 
 
+def _prune_dangling_tool_calls(messages: list[dict]) -> list[dict]:
+    """剪掉「悬空 tool_call」——带 tool_calls 的 assistant 后面没有对应 tool 结果的情况。
+
+    function calling 铁律:assistant 的每个 tool_call 都必须有一条 role:tool 结果响应,
+    否则 provider 会 400「请求参数错误」,且这条脏历史会毒死整个会话(之后每次都带上、每次都挂)。
+    悬空只可能来自「上一轮流式被中断」(客户端断连,落了 assistant-tool_calls 没落 tool 结果)。
+    这里发请求前做一次「读时净化」:JSONL 仍是真相(不改盘),只把发给模型的视图修干净。
+    (P2b 审批的合法暂停态另说——那种悬空是有意的,届时要区别对待,不能一律剪。)
+    """
+    answered = {m.get("tool_call_id") for m in messages if m.get("role") == "tool"}
+    result: list[dict] = []
+    valid_ids: set[str] = set()
+    for m in messages:
+        role = m.get("role")
+        if role == "assistant" and m.get("tool_calls"):
+            kept = [tc for tc in m["tool_calls"] if tc.get("id") in answered]
+            if kept:
+                valid_ids.update(tc["id"] for tc in kept)
+                result.append({**m, "tool_calls": kept})
+            elif m.get("content"):
+                result.append({"role": "assistant", "content": m["content"]})  # 只留正文
+            # 否则(无正文、tool_calls 全悬空)→ 整条丢弃
+        elif role == "tool":
+            if m.get("tool_call_id") in valid_ids:
+                result.append(m)
+            # 否则孤儿 tool 消息(对应调用已被剪)→ 丢
+        else:
+            result.append(m)
+    return result
+
+
 def _accumulate(stream):
     """消费一次流式响应:普通文字 yield text 事件;tool_calls 分片按 index 重组。
     return (text_parts, tool_calls) —— tool_calls 是 OpenAI 兼容结构,可直接回灌历史。
@@ -65,6 +96,8 @@ def run_agent_streaming(sid: str):
     try:
         for _ in range(max_iters):
             history = session_store._fit_context(session_store.read_messages(sid))
+            # 发请求前剪掉悬空 tool_call(上一轮被中断留下的脏态),否则 provider 400 毒死会话
+            history = _prune_dangling_tool_calls(history)
             messages = [{"role": "system", "content": SYSTEM_PROMPT}, *history]
             stream = client.chat.completions.create(
                 model=model,
@@ -83,16 +116,8 @@ def run_agent_streaming(sid: str):
                 yield {"type": "done"}
                 return
 
-            # 协议要求:先落一条带 tool_calls 的 assistant 消息(content 可为 None)。
-            # 「未回答的 tool_call」天然表示暂停 —— P2b 审批的回合边界正落在这。
-            session_store.append_message(
-                sid,
-                {
-                    "role": "assistant",
-                    "content": "".join(text_parts) or None,
-                    "tool_calls": tool_calls,
-                },
-            )
+            # 先把整轮工具跑完、缓冲结果(期间照常 yield 事件给前端实时显示卡片)
+            tool_msgs = []
             for tc in tool_calls:
                 name = tc["function"]["name"]
                 raw = tc["function"]["arguments"]
@@ -103,9 +128,21 @@ def run_agent_streaming(sid: str):
                     parsed = {}          # 参数不是合法 JSON → 交给 registry 自愈(返回参数错误)
                 result = registry.run(name, parsed)
                 yield {"type": "tool_result", "id": tc["id"], "result": result}
-                session_store.append_message(
-                    sid, {"role": "tool", "tool_call_id": tc["id"], "content": result}
-                )
+                tool_msgs.append({"role": "tool", "tool_call_id": tc["id"], "content": result})
+
+            # 一整轮跑完才落盘:assistant(tool_calls) + 各 tool 结果「连续追加、中间不 yield」。
+            # 客户端断连只会发生在 yield 处,而这段没有 yield,所以要么整轮不落、要么整轮落全,
+            # 绝不会劈成「有调用无响应」的悬空脏态(治本)。「悬空=暂停」是 P2b 审批的回合边界地基。
+            session_store.append_message(
+                sid,
+                {
+                    "role": "assistant",
+                    "content": "".join(text_parts) or None,
+                    "tool_calls": tool_calls,
+                },
+            )
+            for tm in tool_msgs:
+                session_store.append_message(sid, tm)
             # 回到 for 顶:带工具结果再问模型
         logger.info("agent 循环到达 max_iters: sid=%s", sid)
         yield {"type": "error", "message": "达到最大步数,已停止"}
