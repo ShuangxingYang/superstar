@@ -1,7 +1,9 @@
-// 与后端 chat.py / session.py 的协议对齐
+// 与后端 chat.py / loop.py / session.py 的协议对齐
 export type ChatEvent =
   | { type: 'session'; session_id: string; title: string }
   | { type: 'text'; content: string }
+  | { type: 'tool_call'; id: string; name: string; args: string }
+  | { type: 'tool_result'; id: string; result: string }
   | { type: 'done' }
   | { type: 'error'; message: string }
 
@@ -12,7 +14,13 @@ export type SessionMeta = {
   updated_at: string
 }
 
-export type ChatMessage = { role: 'user' | 'assistant'; content: string }
+// 后端 JSONL 里存的原始消息形状(历史回放要按它还原工具卡片)
+export type StoredMessage = {
+  role: 'user' | 'assistant' | 'tool'
+  content: string | null
+  tool_calls?: { id: string; function: { name: string; arguments: string } }[]
+  tool_call_id?: string
+}
 
 // ---- 会话 CRUD ----
 export async function listSessions(): Promise<SessionMeta[]> {
@@ -21,7 +29,7 @@ export async function listSessions(): Promise<SessionMeta[]> {
   return r.json()
 }
 
-export async function getSession(sid: string): Promise<ChatMessage[]> {
+export async function getSession(sid: string): Promise<StoredMessage[]> {
   const r = await fetch(`/api/sessions/${sid}`)
   if (!r.ok) throw new Error('拉取会话历史失败')
   return (await r.json()).messages
