@@ -97,3 +97,41 @@ def test_read_file_escape_via_registry(ws):
 
     # 经全局 registry.run 走自愈:越界返回「安全拦截」而不是抛(验证 read_file 已登记)
     assert registry.run("read_file", {"path": "../../etc/passwd"}).startswith("安全拦截")
+
+
+# ============ grep / glob(纯 Python 搜索,复用上面的 ws fixture)============
+from app.agent.tools.search import GlobArgs, GrepArgs, glob, grep
+
+
+def test_grep_hit(ws):
+    (ws / "a.py").write_text("def foo():\n    pass\n", encoding="utf-8")
+    out = grep(GrepArgs(pattern="def "))
+    assert "a.py:1:def foo():" in out
+
+
+def test_grep_no_hit(ws):
+    (ws / "a.py").write_text("pass\n", encoding="utf-8")
+    assert grep(GrepArgs(pattern="zzz")) == "(无匹配)"
+
+
+def test_grep_truncated(ws):
+    (ws / "big.py").write_text("\n".join("match" for _ in range(200)), encoding="utf-8")
+    assert "命中过多" in grep(GrepArgs(pattern="match"))
+
+
+def test_grep_skips_git_dir(ws):
+    (ws / ".git").mkdir()
+    (ws / ".git" / "x.py").write_text("secret", encoding="utf-8")
+    (ws / "a.py").write_text("secret", encoding="utf-8")
+    out = grep(GrepArgs(pattern="secret"))
+    assert ".git" not in out and "a.py:1" in out
+
+
+def test_glob_match(ws):
+    (ws / "a.py").write_text("", encoding="utf-8")
+    (ws / "b.txt").write_text("", encoding="utf-8")
+    assert glob(GlobArgs(pattern="*.py")) == "a.py"
+
+
+def test_glob_no_match(ws):
+    assert glob(GlobArgs(pattern="*.rs")) == "(无匹配)"

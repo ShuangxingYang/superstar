@@ -102,3 +102,14 @@ registry.register(
     "read_file", read_file, ReadFileArgs,
     "读取工作区内一个文件的文本内容(相对路径)。超大文件会自动截断。",
 )
+
+from app.agent.tools.search import GlobArgs, GrepArgs, glob, grep  # noqa: E402
+
+registry.register(
+    "grep", grep, GrepArgs,
+    "在工作区内按正则逐行搜索,返回 相对路径:行号:内容。命中过多会截断。",
+)
+registry.register(
+    "glob", glob, GlobArgs,
+    "按通配模式(如 **/*.py)列出工作区内匹配的文件路径。",
+)
