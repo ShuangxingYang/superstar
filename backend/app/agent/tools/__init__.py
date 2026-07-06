@@ -94,3 +94,11 @@ class ToolRegistry:
 # 全局单例:整个 Agent 共用一份注册表。真实工具在 fs.py / search.py 定义,
 # 由本文件末尾在 Task 3/4 导入并登记(先定义 registry 再 import,天然避免循环引用)。
 registry = ToolRegistry()
+
+# ---- 登记具体工具(放最后:此时 registry 已就绪,import 工具模块不会循环)----
+from app.agent.tools.fs import ReadFileArgs, read_file  # noqa: E402
+
+registry.register(
+    "read_file", read_file, ReadFileArgs,
+    "读取工作区内一个文件的文本内容(相对路径)。超大文件会自动截断。",
+)

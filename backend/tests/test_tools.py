@@ -57,3 +57,43 @@ def test_selfheal_runtime_error():
     r = ToolRegistry()
     r.register("bad", _boom, _EchoArgs, "x")
     assert r.run("bad", {"text": "a"}).startswith("工具执行失败")
+
+
+# ============ read_file / grep / glob 需要真实 workspace ============
+import pytest
+
+from app.config import settings
+from app.services import config_store
+from app.agent.tools.fs import ReadFileArgs, read_file
+
+
+@pytest.fixture
+def ws(tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "data_dir", str(tmp_path))
+    config_store._reset_cache()
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    config_store.update({"security": {"workspace_dir": str(proj)}})
+    return proj
+
+
+def test_read_file_ok(ws):
+    (ws / "a.txt").write_text("hello\nworld", encoding="utf-8")
+    assert read_file(ReadFileArgs(path="a.txt")) == "hello\nworld"
+
+
+def test_read_file_missing(ws):
+    assert read_file(ReadFileArgs(path="nope.txt")).startswith("错误:文件不存在")
+
+
+def test_read_file_truncated(ws):
+    (ws / "big.txt").write_text("\n".join(str(i) for i in range(1000)), encoding="utf-8")
+    out = read_file(ReadFileArgs(path="big.txt"))
+    assert "只显示前" in out
+
+
+def test_read_file_escape_via_registry(ws):
+    from app.agent.tools import registry
+
+    # 经全局 registry.run 走自愈:越界返回「安全拦截」而不是抛(验证 read_file 已登记)
+    assert registry.run("read_file", {"path": "../../etc/passwd"}).startswith("安全拦截")
