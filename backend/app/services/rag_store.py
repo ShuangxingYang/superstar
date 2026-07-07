@@ -5,10 +5,9 @@ rag_store.py —— 检索设施(收敛 M3 散落 7 份的 embed + Qdrant + rera
 集合管理三坑:建/判复用(绝不自动删)、维度漂移报错(不偷删)、连不上包装成 RagStoreError。
 """
 import hashlib
-import json
 import logging
-import urllib.request
 
+import httpx
 from openai import OpenAI
 
 from app.config import settings
@@ -188,25 +187,29 @@ def search(query: str, top_k: int | None = None) -> list[tuple[str, str, float]]
 
 
 def _rerank(query: str, docs: list[str]) -> list[int]:
-    """调 dashscope rerank(HTTP,不引 dashscope SDK)。返回按相关性重排后的原索引顺序。"""
+    """调 dashscope rerank(HTTP,不引 dashscope SDK)。返回按相关性重排后的原索引顺序。
+
+    用 httpx(项目主流 HTTP 客户端,openai/FastAPI 已依赖它),不引整个 dashscope SDK:
+    json= 自动序列化 body、resp.json() 自动解析,比标准库 urllib 简洁。
+    """
     emb = config_store.get()["embedding"]
     model = config_store.get()["rag"]["rerank_model"]
     api_key = emb.get("api_key") or ""
     # dashscope rerank 端点(与 embedding 同一 dashscope 账号 key)
     url = "https://dashscope.aliyuncs.com/api/v1/services/rerank/text-rerank/text-rerank"
-    body = json.dumps({
-        "model": model,
-        "input": {"query": query, "documents": docs},
-        "parameters": {"return_documents": False, "top_n": len(docs)},
-    }).encode()
-    req = urllib.request.Request(url, data=body, headers={
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json",
-    })
-    with urllib.request.urlopen(req, timeout=15) as resp:  # noqa: S310  固定 https dashscope 端点
-        data = json.loads(resp.read())
+    resp = httpx.post(
+        url,
+        headers={"Authorization": f"Bearer {api_key}"},
+        json={
+            "model": model,
+            "input": {"query": query, "documents": docs},
+            "parameters": {"return_documents": False, "top_n": len(docs)},
+        },
+        timeout=15,
+    )
+    resp.raise_for_status()  # 4xx/5xx 抛异常 → search 里 catch 降级
     # 返回 output.results[].index 按相关性降序
-    results = data["output"]["results"]
+    results = resp.json()["output"]["results"]
     return [r["index"] for r in results]
 
 
