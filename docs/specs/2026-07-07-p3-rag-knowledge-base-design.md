@@ -8,7 +8,7 @@
 
 **范围**:后端 RAG 核心 + 前端知识库管理页,一步跑通完整使用故事(配 embedding → 拖入文档 → 对话里问库内/库外问题)。
 
-**不做(留后面 / 二版)**:飞书 API 直连(先导出成 md/pdf 再入库)、OCR/扫描件 PDF、混合检索(BM25+向量 RRF)、真流式灌库进度、索引进度条、jieba 中文分词、父子分块、query 改写、**切块尾块合并(min_chunk_size)**——见 4.2 已知局限。
+**不做(留后面 / 二版)**:飞书 API 直连(先导出成 md/pdf 再入库)、OCR/扫描件 PDF、混合检索(BM25+向量 RRF)、真流式灌库进度、索引进度条、jieba 中文分词、父子分块、query 改写、**切块尾块合并(min_chunk_size)**——见 4.2 已知局限、**rerank 服务商可换(adapter 层)**——见 4.3 已知局限。
 
 ## 二、关键决策总账
 
@@ -115,6 +115,8 @@ search:
 ```
 
 **rerank 怎么调**(重要,与 embed 不同):rerank **不是 openai SDK 的标准端点**(OpenAI API 本身无 rerank 能力),只能走 dashscope 专用接口。为不引入整个 `dashscope` SDK(延续依赖越轻越好),用**标准库 HTTP POST** 打 dashscope rerank 端点(`.../api/v1/services/rerank/text-rerank/text-rerank`,body 传 model + query + documents,header 带 embedding 的 api_key),解析返回的 `results[].relevance_score` 重排。端点/model 从 config 的 `rag.rerank_model` + embedding 的 base_url 家族推导。这块封装在 rag_store 内部一个 `_rerank(query, docs)` 函数,失败即降级。
+
+**已知局限(rerank 服务商写死 dashscope)**:配置化只抽了 `rag.rerank_model`(可改 dashscope 家的不同 rerank 模型,或置空关掉 rerank)。但 rerank 的**端点 URL、请求 body 结构、响应解析字段(`output.results[].index`)是写死的 dashscope 协议**,换不成别家(Cohere/Jina 等)——因为 rerank 无 OpenAI 兼容标准,各家 body/响应结构都不同,换家是「改行为」不是「改数据」,配置化覆盖不了。当前刻意如此:①只有一个 dashscope key(rerank 复用 embedding 的 key);②rerank 是可降级的优化项;③YAGNI,没有第二家要接。二版若需换服务商,做一个 **rerank adapter 层**(仿 loaders 适配器:每家一个 `_rerank_xxx`,config 里选 provider),而非只把 URL 抽成配置——只抽 URL 是半吊子,会给「已能换家」的错觉,实际换家仍要改 body/解析。
 
 ### 4.4 agent/tools/rag.py —— search_kb 工具
 
