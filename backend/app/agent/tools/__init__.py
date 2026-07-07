@@ -127,3 +127,10 @@ registry.register(
     "run_command", run_command, RunCommandArgs,
     "在工作区目录下执行一条 shell 命令并返回输出(退出码 + stdout/stderr)。危险命令会被拒绝,其余需用户审批。",
 )
+
+from app.agent.tools.rag import SearchKbArgs, search_kb  # noqa: E402
+
+registry.register(
+    "search_kb", search_kb, SearchKbArgs,
+    "在文档知识库里语义检索,返回最相关的片段和来源。需要引用资料/文档内容回答时用它。",
+)

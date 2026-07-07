@@ -178,3 +178,28 @@ def test_run_command_truncates(ws):
     # 造超长输出(> MAX_OUTPUT):用当前解释器,保证 python 可用
     cmd = f"{sys.executable} -c \"print('x'*{MAX_OUTPUT + 500})\""
     assert "输出过长已截断" in run_command(RunCommandArgs(command=cmd))
+
+
+def test_search_kb_formats_with_source(monkeypatch):
+    from app.agent.tools import rag
+    monkeypatch.setattr(rag.rag_store, "search",
+                        lambda query, top_k=5: [("ReAct 是推理+行动", "m3.md", 0.9),
+                                                 ("CoT 是思维链", "m2.md", 0.8)])
+    out = rag.search_kb(rag.SearchKbArgs(query="什么是ReAct"))
+    assert "ReAct 是推理+行动" in out
+    assert "[来源: m3.md]" in out
+    assert "[来源: m2.md]" in out
+
+
+def test_search_kb_empty(monkeypatch):
+    from app.agent.tools import rag
+    monkeypatch.setattr(rag.rag_store, "search", lambda query, top_k=5: [])
+    out = rag.search_kb(rag.SearchKbArgs(query="库外问题"))
+    assert "没有相关内容" in out
+
+
+def test_search_kb_registered():
+    from app.agent.tools import registry
+    schema = registry.to_openai_schema()
+    names = {s["function"]["name"] for s in schema}
+    assert "search_kb" in names
