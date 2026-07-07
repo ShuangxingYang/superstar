@@ -103,6 +103,13 @@ registry.register(
     "读取工作区内一个文件的文本内容(相对路径)。超大文件会自动截断。",
 )
 
+from app.agent.tools.fs import WriteFileArgs, write_file  # noqa: E402
+
+registry.register(
+    "write_file", write_file, WriteFileArgs,
+    "把文本内容写入工作区内一个文件(相对路径);不存在则新建,存在则整体覆盖。此操作需用户审批。",
+)
+
 from app.agent.tools.search import GlobArgs, GrepArgs, glob, grep  # noqa: E402
 
 registry.register(

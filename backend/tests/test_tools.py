@@ -135,3 +135,23 @@ def test_glob_match(ws):
 
 def test_glob_no_match(ws):
     assert glob(GlobArgs(pattern="*.rs")) == "(无匹配)"
+
+
+# ============ P2b: write_file ============
+from app.agent.tools.fs import WriteFileArgs, write_file
+
+
+def test_write_file_ok(ws):
+    assert write_file(WriteFileArgs(path="new.txt", content="hi")).startswith("已写入")
+    assert (ws / "new.txt").read_text(encoding="utf-8") == "hi"
+
+
+def test_write_file_creates_parent(ws):
+    write_file(WriteFileArgs(path="sub/deep/x.txt", content="y"))
+    assert (ws / "sub" / "deep" / "x.txt").read_text(encoding="utf-8") == "y"
+
+
+def test_write_file_escape_via_registry(ws):
+    from app.agent.tools import registry
+    # 越界写经全局 registry 走自愈 → 「安全拦截」而非抛(验证已登记)
+    assert registry.run("write_file", {"path": "../../tmp/x", "content": "z"}).startswith("安全拦截")
