@@ -173,3 +173,47 @@ def run_agent_streaming(sid: str):
     except Exception as e:  # noqa: BLE001 - 未预期异常 → 兜成 error 事件,已流出的内容保留
         logger.warning("agent 循环失败: sid=%s err=%s", sid, type(e).__name__)
         yield {"type": "error", "message": str(e)}
+
+
+def resume_streaming(sid: str, tool_call_id: str, decision: str):
+    """恢复一个待审批的 tool_call。decision ∈ 'approve'|'reject'。
+    批准 → 真执行;拒绝 → 落「已拒绝」。若本轮还有别的待批 → 结束等下次;全批完 → 继续正常循环。
+    """
+    pend = pending_store.read(sid)
+    if not pend:
+        yield {"type": "error", "message": "没有待审批的操作"}
+        return
+    tc = next((t for t in pend["tool_calls"] if t["id"] == tool_call_id), None)
+    if tc is None:
+        yield {"type": "error", "message": "待审批操作不存在或已处理"}
+        return
+
+    if decision == "approve":
+        result = registry.run(tc["function"]["name"], _parse_args(tc))   # 真正执行
+    else:
+        result = "用户已拒绝此操作"
+    logger.info("审批恢复: sid=%s, id=%s, decision=%s", sid, tool_call_id, decision)
+    yield {"type": "tool_result", "id": tool_call_id, "result": result}
+    session_store.append_message(sid, {"role": "tool", "tool_call_id": tool_call_id, "content": result})
+
+    remaining = [t for t in pend["tool_calls"] if t["id"] != tool_call_id]
+    if remaining:                              # 本轮还有别的待批 → 结束,等下次点击
+        prev = {k: v for k, v in pend["previews"].items() if k != tool_call_id}
+        pending_store.write(sid, remaining, prev)
+        return
+    pending_store.clear(sid)                   # 全批完 → 带新结果继续问模型
+    yield from run_agent_streaming(sid)
+
+
+def reject_all_pending(sid: str) -> None:
+    """把某会话所有待批操作按拒绝落盘并清 sidecar(不 yield)。
+    用于「审批未决、用户却发了新消息」:先把悬空协议合法地收尾,再走新消息。"""
+    pend = pending_store.read(sid)
+    if not pend:
+        return
+    for tc in pend["tool_calls"]:
+        session_store.append_message(sid, {
+            "role": "tool", "tool_call_id": tc["id"],
+            "content": "用户已拒绝此操作(发起了新消息)"})
+    pending_store.clear(sid)
+    logger.info("残留 pending 自动拒绝: sid=%s, 数量=%d", sid, len(pend["tool_calls"]))

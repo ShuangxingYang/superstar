@@ -201,3 +201,39 @@ def test_write_file_pauses_for_approval(p2b_ready):
     assert not any(m["role"] == "tool" for m in msgs)
     # pending sidecar 已写,文件还没被写
     assert pending.read(sid) is not None
+
+
+def test_resume_approve_executes_and_continues(p2b_ready):
+    sid, proj = p2b_ready
+    events = list(loop.run_agent_streaming(sid))            # 先跑到审批暂停
+    ar = next(e for e in events if e["type"] == "approval_required")
+
+    ev2 = list(loop.resume_streaming(sid, ar["id"], "approve"))
+    assert any(e["type"] == "done" for e in ev2)            # 续跑拿到终答
+    assert (proj / "out.txt").read_text(encoding="utf-8") == "hello"   # 真写了
+    msgs = session_store.read_messages(sid)
+    assert any(m["role"] == "tool" and m["tool_call_id"] == ar["id"] for m in msgs)
+    assert pending.read(sid) is None                        # sidecar 已清
+
+
+def test_resume_reject_records_and_continues(p2b_ready):
+    sid, proj = p2b_ready
+    events = list(loop.run_agent_streaming(sid))
+    ar = next(e for e in events if e["type"] == "approval_required")
+
+    ev2 = list(loop.resume_streaming(sid, ar["id"], "reject"))
+    assert any(e["type"] == "done" for e in ev2)
+    assert not (proj / "out.txt").exists()                  # 没写
+    msgs = session_store.read_messages(sid)
+    tool_msg = next(m for m in msgs if m["role"] == "tool" and m["tool_call_id"] == ar["id"])
+    assert "拒绝" in tool_msg["content"]
+    assert pending.read(sid) is None
+
+
+def test_reject_all_pending_collapses(p2b_ready):
+    sid, _ = p2b_ready
+    list(loop.run_agent_streaming(sid))                     # 造出一个待审批
+    loop.reject_all_pending(sid)
+    assert pending.read(sid) is None
+    msgs = session_store.read_messages(sid)
+    assert any(m["role"] == "tool" and "拒绝" in m["content"] for m in msgs)
