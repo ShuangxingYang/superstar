@@ -6,6 +6,7 @@ security.py —— 沙箱守卫(P2a 只读工具的最底层防线)
 碰文件的工具(read_file/grep/glob)都必须先过 safe_path。
 """
 import logging
+import re
 from pathlib import Path
 
 from app.services import config_store
@@ -41,3 +42,38 @@ def safe_path(rel: str) -> Path:
         logger.warning("路径越界拦截: rel=%s", rel)
         raise SecurityError(f"路径越界,超出工作区: {rel}")
     return target
+
+
+# ---- P2b: 命令分级(白/黑/灰),拆段判级防拼接绕过 ----
+SHELL_SEP = re.compile(r"&&|\|\||;|\|")   # && || ; |
+
+
+def _segments(command: str) -> list[str]:
+    """按 shell 操作符拆成多段,去空白空段。"""
+    return [s.strip() for s in SHELL_SEP.split(command) if s.strip()]
+
+
+def classify_command(command: str) -> str:
+    """返回 'white' | 'black' | 'gray'。
+
+    规则(顺序敏感):
+      1. 黑优先:任一段含黑名单词(子串)→ black。防 `grep x && rm -rf /` 绕过。
+      2. 全白才白:每段都以某白名单项开头(token 边界)→ white。
+      3. 其余 → gray(审批)。
+    """
+    cfg = config_store.get()["security"]
+    whitelist, blacklist = cfg["cmd_whitelist"], cfg["cmd_blacklist"]
+    segs = _segments(command)
+    if not segs:
+        return "black"                                   # 空命令直接拒
+    for seg in segs:
+        if any(b in seg for b in blacklist):
+            logger.info("命令分级=black: seg=%s", seg)
+            return "black"
+
+    def seg_white(seg: str) -> bool:                     # 'grep' 配 'grep foo',不配 'grepx'
+        return any(seg == w or seg.startswith(w + " ") for w in whitelist)
+
+    if all(seg_white(seg) for seg in segs):
+        return "white"
+    return "gray"
