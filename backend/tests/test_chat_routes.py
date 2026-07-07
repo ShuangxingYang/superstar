@@ -119,3 +119,68 @@ def test_chat_with_tool(tmp_path, monkeypatch):
     assert next(e for e in evs if e["type"] == "tool_call")["name"] == "glob"
     assert "x.py" in next(e for e in evs if e["type"] == "tool_result")["result"]
     assert types[-1] == "done"
+
+
+# ============ P2b: /resume + 残留 pending 防护 ============
+from app.agent import pending
+
+
+class _WriteThenAnswerC:
+    """第 1 次要 write_file(触发审批),之后给终答。"""
+    def __init__(self):
+        self.calls = 0
+
+    def create(self, model, messages, tools=None, stream=True):
+        self.calls += 1
+        if self.calls == 1:
+            yield _Chunk(_Delta(tool_calls=[_TC(0, id="w1", name="write_file",
+                arguments='{"path": "out.txt", "content": "hi"}')]))
+        else:
+            yield _Chunk(_Delta(content="写好了"))
+
+
+class _WriteClientC:
+    def __init__(self):
+        self.chat = type("Chat", (), {"completions": _WriteThenAnswerC()})()
+
+
+@pytest.fixture
+def client_ws(tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "data_dir", str(tmp_path))
+    config_store._reset_cache()
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    config_store.update({"security": {"workspace_dir": str(proj)}})
+    client_obj = _WriteClientC()                                  # 共享实例:calls 跨 stream+resume 累计
+    monkeypatch.setattr(llm, "get_llm_client", lambda: (client_obj, "fake"))
+    from app.api.main import app
+    return TestClient(app), proj
+
+
+def test_resume_endpoint_executes(client_ws):
+    c, proj = client_ws
+    r1 = c.post("/api/chat/stream", json={"message": "写文件"})
+    ev1 = _events(r1.text)
+    ar = next(e for e in ev1 if e["type"] == "approval_required")
+    sid = next(e for e in ev1 if e["type"] == "session")["session_id"]
+    assert pending.read(sid) is not None
+    # 批准 → /resume 续跑到 done,文件真被写,sidecar 清空
+    r2 = c.post("/api/chat/resume",
+                json={"session_id": sid, "tool_call_id": ar["id"], "decision": "approve"})
+    ev2 = _events(r2.text)
+    assert any(e["type"] == "done" for e in ev2)
+    assert (proj / "out.txt").read_text(encoding="utf-8") == "hi"
+    assert pending.read(sid) is None
+
+
+def test_stream_with_residual_pending_auto_rejects(client_ws):
+    c, _ = client_ws
+    r1 = c.post("/api/chat/stream", json={"message": "写文件"})
+    sid = next(e for e in _events(r1.text) if e["type"] == "session")["session_id"]
+    assert pending.read(sid) is not None
+    # 不点审批,直接发新消息 → 残留 pending 被自动拒绝,新消息照常处理
+    r2 = c.post("/api/chat/stream", json={"session_id": sid, "message": "算了"})
+    assert _events(r2.text)[-1]["type"] == "done"
+    assert pending.read(sid) is None
+    msgs = session_store.read_messages(sid)
+    assert any(m["role"] == "tool" and "拒绝" in (m.get("content") or "") for m in msgs)

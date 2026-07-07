@@ -8,6 +8,7 @@ schemas.py —— API 出入口的 Pydantic 模型(请求校验 + 响应塑形 +
 """
 
 from copy import deepcopy
+from typing import Literal
 
 from pydantic import BaseModel
 
@@ -104,6 +105,13 @@ class SessionMeta(BaseModel):
 
 class RenameRequest(BaseModel):
     title: str
+
+
+# ---- 审批恢复(P2b) ----
+class ResumeRequest(BaseModel):
+    session_id: str
+    tool_call_id: str
+    decision: Literal["approve", "reject"]
 
 
 # ---- key 脱敏 ----

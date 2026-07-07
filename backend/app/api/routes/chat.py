@@ -13,6 +13,7 @@ from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 
 from app.agent import loop
+from app.agent import pending as pending_store
 from app.models import schemas
 from app.services import session_store
 
@@ -32,6 +33,9 @@ def chat_stream(req: schemas.ChatRequest) -> StreamingResponse:
         # 定 sid:带 sid 则续写,不带则懒创建(首句到达才落盘,不产生空会话)
         sid = req.session_id or session_store.create()
         try:
+            # 残留 pending 防护:审批未决却发了新消息 → 先自动拒绝收尾,避免悬空毒死会话
+            if req.session_id and pending_store.read(sid):
+                loop.reject_all_pending(sid)
             # 先落用户消息:哪怕模型挂了也不丢输入(首条会顺带生成标题)
             session_store.append_message(sid, {"role": "user", "content": req.message})
             title = next((s["title"] for s in session_store.list_sessions() if s["id"] == sid), "")
@@ -42,6 +46,27 @@ def chat_stream(req: schemas.ChatRequest) -> StreamingResponse:
                 yield _sse(event)
         except Exception as e:  # noqa: BLE001 - 兜底:错误也当事件发给前端展示
             logger.warning("chat 失败: sid=%s err=%s", sid, type(e).__name__)
+            yield _sse({"type": "error", "message": str(e)})
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@router.post("/resume")
+def chat_resume(req: schemas.ResumeRequest) -> StreamingResponse:
+    """人在环路审批的恢复:批准/拒绝一个待审批的工具调用,续跑循环。"""
+    logger.info("resume 请求: sid=%s, id=%s, decision=%s",
+                req.session_id, req.tool_call_id, req.decision)
+
+    def event_stream():
+        try:
+            for event in loop.resume_streaming(req.session_id, req.tool_call_id, req.decision):
+                yield _sse(event)
+        except Exception as e:  # noqa: BLE001 - 兜底:错误也当事件发给前端展示
+            logger.warning("resume 失败: sid=%s err=%s", req.session_id, type(e).__name__)
             yield _sse({"type": "error", "message": str(e)})
 
     return StreamingResponse(
