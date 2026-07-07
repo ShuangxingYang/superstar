@@ -32,6 +32,7 @@ DEFAULTS: dict = {
         "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
         "api_key": "",
         "model": "text-embedding-v3",
+        "dimension": 1024,  # 建 Qdrant 集合 + 维度校验用;换模型维度变了要重建
     },
     "security": {
         "workspace_dir": "",
@@ -40,6 +41,14 @@ DEFAULTS: dict = {
         "cmd_blacklist": ["rm -rf", "sudo", "curl", "wget", "mkfs", "dd"],
     },
     "agent": {"max_iters": 10, "temperature": 0.7},
+    # RAG 参数:切块大小/重叠、召回 top_n、精排 top_k、rerank 模型(空=跳过 rerank)
+    "rag": {
+        "chunk_size": 500,
+        "overlap": 80,
+        "top_n": 20,
+        "top_k": 5,
+        "rerank_model": "gte-rerank",
+    },
 }
 
 _cache: dict | None = None

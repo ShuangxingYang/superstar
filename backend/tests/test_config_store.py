@@ -36,3 +36,14 @@ def test_is_llm_configured(tmp_config):
     assert config_store.is_llm_configured() is False
     config_store.update({"llm": {"api_key": "sk-abc", "model": "ep-1"}})
     assert config_store.is_llm_configured() is True
+
+
+def test_defaults_have_rag_section(tmp_config):
+    # P3:embedding 加维度,新增 rag 段(切块/召回/精排参数)
+    cfg = config_store.get()
+    assert cfg["embedding"]["dimension"] == 1024
+    assert cfg["rag"]["chunk_size"] == 500
+    assert cfg["rag"]["overlap"] == 80
+    assert cfg["rag"]["top_n"] == 20
+    assert cfg["rag"]["top_k"] == 5
+    assert cfg["rag"]["rerank_model"] == "gte-rerank"
