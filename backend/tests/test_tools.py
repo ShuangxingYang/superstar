@@ -155,3 +155,26 @@ def test_write_file_escape_via_registry(ws):
     from app.agent.tools import registry
     # 越界写经全局 registry 走自愈 → 「安全拦截」而非抛(验证已登记)
     assert registry.run("write_file", {"path": "../../tmp/x", "content": "z"}).startswith("安全拦截")
+
+
+# ============ P2b: run_command ============
+import sys
+
+from app.agent.tools.shell import MAX_OUTPUT, RunCommandArgs, run_command
+
+
+def test_run_command_ok(ws):
+    out = run_command(RunCommandArgs(command="echo hi"))
+    assert "[exit 0]" in out and "hi" in out
+
+
+def test_run_command_cwd_is_workspace(ws):
+    (ws / "marker.txt").write_text("", encoding="utf-8")
+    out = run_command(RunCommandArgs(command="ls"))      # cwd=工作区 → 能看到 marker
+    assert "marker.txt" in out
+
+
+def test_run_command_truncates(ws):
+    # 造超长输出(> MAX_OUTPUT):用当前解释器,保证 python 可用
+    cmd = f"{sys.executable} -c \"print('x'*{MAX_OUTPUT + 500})\""
+    assert "输出过长已截断" in run_command(RunCommandArgs(command=cmd))

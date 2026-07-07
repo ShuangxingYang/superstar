@@ -120,3 +120,10 @@ registry.register(
     "glob", glob, GlobArgs,
     "按通配模式(如 **/*.py)列出工作区内匹配的文件路径。",
 )
+
+from app.agent.tools.shell import RunCommandArgs, run_command  # noqa: E402
+
+registry.register(
+    "run_command", run_command, RunCommandArgs,
+    "在工作区目录下执行一条 shell 命令并返回输出(退出码 + stdout/stderr)。危险命令会被拒绝,其余需用户审批。",
+)
