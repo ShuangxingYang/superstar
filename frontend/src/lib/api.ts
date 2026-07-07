@@ -114,3 +114,41 @@ export async function resumeChat(
   })
   await readSSE(resp, onEvent)
 }
+
+// ---- 知识库(P3) ----
+export type KbDoc = { source: string; chunks: number }
+export type KbStats = { documents: number; chunks: number; dimension: number }
+
+export async function uploadKb(file: File): Promise<KbDoc> {
+  const form = new FormData()
+  form.append('file', file)
+  const r = await fetch('/api/kb/upload', { method: 'POST', body: form })
+  if (!r.ok) {
+    const detail = await r.json().catch(() => ({}))
+    throw new Error(detail.detail || '上传失败')
+  }
+  return r.json()
+}
+
+export async function listKb(): Promise<KbDoc[]> {
+  const r = await fetch('/api/kb/list')
+  if (!r.ok) throw new Error('拉取知识库列表失败')
+  return r.json()
+}
+
+export async function deleteKb(source: string): Promise<void> {
+  const r = await fetch(`/api/kb/${encodeURIComponent(source)}`, { method: 'DELETE' })
+  if (!r.ok) throw new Error('删除失败')
+}
+
+export async function rebuildKb(): Promise<{ documents: number; chunks: number }> {
+  const r = await fetch('/api/kb/rebuild', { method: 'POST' })
+  if (!r.ok) throw new Error('重建失败')
+  return r.json()
+}
+
+export async function kbStats(): Promise<KbStats> {
+  const r = await fetch('/api/kb/stats')
+  if (!r.ok) throw new Error('拉取状态失败')
+  return r.json()
+}
