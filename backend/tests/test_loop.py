@@ -150,3 +150,54 @@ def test_prune_keeps_content_when_tool_calls_dangling():
              [{"id": "a", "type": "function", "function": {"name": "grep", "arguments": "{}"}}]}]
     out = loop._prune_dangling_tool_calls(msgs)
     assert out == [{"role": "assistant", "content": "我想想"}]
+
+
+# ============ P2b: 审批回合边界 + resume ============
+from app.agent import pending
+
+
+def _write_tool_stream():
+    yield _Chunk(_Delta(tool_calls=[_TC(0, id="w1", name="write_file",
+        arguments='{"path": "out.txt", "content": "hello"}')]))
+
+
+class _WriteThenAnswer:
+    """第 1 次 create 要 write_file(触发审批),之后(resume 续跑)给终答。"""
+    def __init__(self):
+        self.calls = 0
+
+    def create(self, model, messages, tools, stream):
+        self.calls += 1
+        return _write_tool_stream() if self.calls == 1 else _answer_stream()
+
+
+class _WriteClient:
+    def __init__(self):
+        self.chat = type("Chat", (), {"completions": _WriteThenAnswer()})()
+
+
+@pytest.fixture
+def p2b_ready(tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "data_dir", str(tmp_path))
+    config_store._reset_cache()
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    config_store.update({"security": {"workspace_dir": str(proj)}})
+    client = _WriteClient()                                   # 共享实例:calls 跨 run+resume 累计
+    monkeypatch.setattr(llm, "get_llm_client", lambda: (client, "fake"))
+    sid = session_store.create()
+    session_store.append_message(sid, {"role": "user", "content": "写个文件"})
+    return sid, proj
+
+
+def test_write_file_pauses_for_approval(p2b_ready):
+    sid, _ = p2b_ready
+    events = list(loop.run_agent_streaming(sid))
+    ar = next(e for e in events if e["type"] == "approval_required")
+    assert ar["name"] == "write_file" and ar["preview"]["kind"] == "write"
+    # 落盘:assistant(tool_calls) 有,但还没有任何 tool 结果(有意悬空)
+    msgs = session_store.read_messages(sid)
+    assert msgs[-1]["role"] == "assistant" and msgs[-1]["tool_calls"]
+    assert not any(m["role"] == "tool" for m in msgs)
+    # pending sidecar 已写,文件还没被写
+    assert pending.read(sid) is not None

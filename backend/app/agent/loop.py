@@ -9,6 +9,8 @@ chat 路由把 event 原样转 SSE,二期飞书适配器可消费同样的 event
 import json
 import logging
 
+from app.agent import pending as pending_store
+from app.agent.gate import gate_tool_call
 from app.agent.tools import registry
 from app.services import config_store, llm, session_store
 
@@ -16,9 +18,11 @@ logger = logging.getLogger(__name__)
 
 # 极简 system:告诉模型有工具、大致职责。完整画像/soul 注入留 P5。
 SYSTEM_PROMPT = (
-    "你是一个本地编码助手,可以调用工具查看用户工作区里的代码:"
-    "grep(按正则搜索)、glob(按通配列文件)、read_file(读文件)。"
-    "需要看代码再作答时就调用工具;能直接回答的问题不必调用。"
+    "你是一个本地编码助手,可以调用工具查看并修改用户工作区里的代码:"
+    "grep(按正则搜索)、glob(按通配列文件)、read_file(读文件)、"
+    "write_file(写文件)、run_command(跑 shell 命令)。"
+    "需要看/改代码再作答时就调用工具;能直接回答的问题不必调用。"
+    "写文件和跑命令可能需要用户审批,危险命令会被拒绝,你会在结果里看到反馈。"
 )
 
 
@@ -88,6 +92,15 @@ def _accumulate(stream):
     return text_parts, tool_calls
 
 
+def _parse_args(tc: dict) -> dict:
+    """解析一个 tool_call 的 arguments(JSON 字符串)→ dict;非法/空 → {}(交给下游自愈)。"""
+    raw = tc["function"]["arguments"]
+    try:
+        return json.loads(raw) if raw else {}
+    except json.JSONDecodeError:
+        return {}
+
+
 def run_agent_streaming(sid: str):
     """喂该会话历史,跑 function calling 循环,逐步 yield typed event。"""
     client, model = llm.get_llm_client()
@@ -116,23 +129,29 @@ def run_agent_streaming(sid: str):
                 yield {"type": "done"}
                 return
 
-            # 先把整轮工具跑完、缓冲结果(期间照常 yield 事件给前端实时显示卡片)
-            tool_msgs = []
+            # 每个 tool_call 先过 gate 判处置:auto 当场跑,deny 直接拒,approve 停下等审批。
+            # 期间照常 yield 事件给前端实时显示卡片;真正落盘留到整轮末尾连续写(治本防悬空)。
+            tool_results: list[tuple[str, str]] = []   # (id, result) —— auto/deny 的
+            pending_calls: list[dict] = []             # approve 的完整 tool_call
+            previews: dict = {}                        # id -> 预览
             for tc in tool_calls:
                 name = tc["function"]["name"]
-                raw = tc["function"]["arguments"]
-                yield {"type": "tool_call", "id": tc["id"], "name": name, "args": raw}
-                try:
-                    parsed = json.loads(raw) if raw else {}
-                except json.JSONDecodeError:
-                    parsed = {}          # 参数不是合法 JSON → 交给 registry 自愈(返回参数错误)
-                result = registry.run(name, parsed)
-                yield {"type": "tool_result", "id": tc["id"], "result": result}
-                tool_msgs.append({"role": "tool", "tool_call_id": tc["id"], "content": result})
+                parsed = _parse_args(tc)
+                action, preview = gate_tool_call(name, parsed)
+                if action == "approve":
+                    yield {"type": "approval_required", "id": tc["id"], "name": name,
+                           "args": tc["function"]["arguments"], "preview": preview}
+                    pending_calls.append(tc)
+                    previews[tc["id"]] = preview
+                else:
+                    yield {"type": "tool_call", "id": tc["id"], "name": name,
+                           "args": tc["function"]["arguments"]}
+                    result = ("被安全策略拒绝(黑名单/越界)" if action == "deny"
+                              else registry.run(name, parsed))   # 仅 auto 真执行
+                    yield {"type": "tool_result", "id": tc["id"], "result": result}
+                    tool_results.append((tc["id"], result))
 
-            # 一整轮跑完才落盘:assistant(tool_calls) + 各 tool 结果「连续追加、中间不 yield」。
-            # 客户端断连只会发生在 yield 处,而这段没有 yield,所以要么整轮不落、要么整轮落全,
-            # 绝不会劈成「有调用无响应」的悬空脏态(治本)。「悬空=暂停」是 P2b 审批的回合边界地基。
+            # 一整轮跑完才落盘:assistant(tool_calls) + 各 tool 结果「连续追加、中间不 yield」(治本防悬空)。
             session_store.append_message(
                 sid,
                 {
@@ -141,9 +160,14 @@ def run_agent_streaming(sid: str):
                     "tool_calls": tool_calls,
                 },
             )
-            for tm in tool_msgs:
-                session_store.append_message(sid, tm)
-            # 回到 for 顶:带工具结果再问模型
+            for tid, r in tool_results:
+                session_store.append_message(sid, {"role": "tool", "tool_call_id": tid, "content": r})
+            if pending_calls:
+                # 有待审批 → 写 sidecar 标记「有意悬空」,结束流,等 /resume 恢复
+                pending_store.write(sid, pending_calls, previews)
+                logger.info("审批暂停: sid=%s, 待审批=%d", sid, len(pending_calls))
+                return
+            # 无 pending → 回 for 顶,带工具结果再问模型(全 auto/deny 的轮,与 P2a 行为一致)
         logger.info("agent 循环到达 max_iters: sid=%s", sid)
         yield {"type": "error", "message": "达到最大步数,已停止"}
     except Exception as e:  # noqa: BLE001 - 未预期异常 → 兜成 error 事件,已流出的内容保留
