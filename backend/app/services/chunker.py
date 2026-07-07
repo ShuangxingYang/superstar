@@ -64,19 +64,16 @@ def _hard_split(text: str, chunk_size: int) -> list[str]:
 
 
 def _apply_overlap(chunks: list[str], overlap: int) -> list[str]:
-    """给相邻块加重叠:先还原全文,再按 (chunk_size - overlap) 步长滑窗切块。"""
+    """给相邻块加重叠:每块前面补上一块的尾部 overlap 个字符。
+
+    关键:块本身保持边界对齐(_recursive_split 的成果),只在块首拼接
+    前一块的尾巴,绝不把整段拼回去重切——那会退化成纯定长斩断,前功尽弃。
+    每块因此可能比 chunk_size 略长(多出 overlap),这是重叠的正常代价。
+    还原公式:chunks[0] + 后续块去掉 overlap 前缀 == 原文。
+    """
     if overlap <= 0 or len(chunks) <= 1:
         return chunks
-    # 还原全文
-    full_text = "".join(chunks)
-    # 原始块大小(以第一块为基准)
-    chunk_size = len(chunks[0])
-    # 重叠滑窗步长
-    step = max(1, chunk_size - overlap)
-    # 按步长切块
-    result = []
-    for i in range(0, len(full_text), step):
-        chunk = full_text[i:i + chunk_size]
-        if chunk:
-            result.append(chunk)
+    result = [chunks[0]]
+    for prev, cur in zip(chunks, chunks[1:]):
+        result.append(prev[-overlap:] + cur)
     return result
