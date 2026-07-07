@@ -5,7 +5,9 @@ rag_store.py —— 检索设施(收敛 M3 散落 7 份的 embed + Qdrant + rera
 集合管理三坑:建/判复用(绝不自动删)、维度漂移报错(不偷删)、连不上包装成 RagStoreError。
 """
 import hashlib
+import json
 import logging
+import urllib.request
 
 from openai import OpenAI
 
@@ -163,6 +165,49 @@ def rebuild() -> dict:
 def stats() -> dict:
     docs = list_documents()
     return {"documents": len(docs), "chunks": sum(d["chunks"] for d in docs), "dimension": _dimension()}
+
+
+def search(query: str, top_k: int | None = None) -> list[tuple[str, str, float]]:
+    """两阶段:向量召回 top_n → rerank 精排 top_k。rerank 失败降级用向量顺序。"""
+    _ensure_collection()
+    rag = config_store.get()["rag"]
+    top_n = rag["top_n"]
+    k = top_k or rag["top_k"]
+    hits = _get_qdrant().query_points(collection_name=COLLECTION, query=_embed(query), limit=top_n).points
+    candidates = [(h.payload.get("text", ""), h.payload.get("source", "?"), h.score) for h in hits]
+    if not candidates:
+        return []
+    rerank_model = rag.get("rerank_model") or ""
+    if rerank_model:
+        try:
+            order = _rerank(query, [c[0] for c in candidates])
+            candidates = [candidates[i] for i in order]
+        except Exception as e:  # noqa: BLE001  rerank 是优化项,挂了降级不拖垮检索
+            logger.warning("rerank 失败,降级用向量顺序: %s", type(e).__name__)
+    return candidates[:k]
+
+
+def _rerank(query: str, docs: list[str]) -> list[int]:
+    """调 dashscope rerank(HTTP,不引 dashscope SDK)。返回按相关性重排后的原索引顺序。"""
+    emb = config_store.get()["embedding"]
+    model = config_store.get()["rag"]["rerank_model"]
+    api_key = emb.get("api_key") or ""
+    # dashscope rerank 端点(与 embedding 同一 dashscope 账号 key)
+    url = "https://dashscope.aliyuncs.com/api/v1/services/rerank/text-rerank/text-rerank"
+    body = json.dumps({
+        "model": model,
+        "input": {"query": query, "documents": docs},
+        "parameters": {"return_documents": False, "top_n": len(docs)},
+    }).encode()
+    req = urllib.request.Request(url, data=body, headers={
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    })
+    with urllib.request.urlopen(req, timeout=15) as resp:  # noqa: S310  固定 https dashscope 端点
+        data = json.loads(resp.read())
+    # 返回 output.results[].index 按相关性降序
+    results = data["output"]["results"]
+    return [r["index"] for r in results]
 
 
 def _reset() -> None:

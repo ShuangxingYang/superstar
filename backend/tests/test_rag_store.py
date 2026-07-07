@@ -132,3 +132,55 @@ def test_index_document_flow(cfg, tmp_path, monkeypatch):
     pt = fake.points[rag_store.COLLECTION][0]
     assert pt.payload["source"] == "doc.md"
     assert "text" in pt.payload
+
+
+class _Hit:
+    def __init__(self, text, source, score):
+        self.payload = {"text": text, "source": source}
+        self.score = score
+
+
+def test_search_vector_only_when_no_rerank(cfg, monkeypatch):
+    config_store.update({"rag": {"rerank_model": ""}})   # 关掉 rerank
+    fake = _FakeQdrant()
+
+    class _R:
+        points = [_Hit("片段A", "a.md", 0.9), _Hit("片段B", "b.md", 0.8)]
+    monkeypatch.setattr(rag_store, "_get_qdrant", lambda: fake)
+    monkeypatch.setattr(rag_store, "_ensure_collection", lambda: None)
+    monkeypatch.setattr(rag_store, "_embed", lambda t: [0.1] * 1024)
+    fake.query_points = lambda collection_name, query, limit: _R()
+    out = rag_store.search("q", top_k=2)
+    assert out == [("片段A", "a.md", 0.9), ("片段B", "b.md", 0.8)]
+
+
+def test_search_reranks_and_trims(cfg, monkeypatch):
+    fake = _FakeQdrant()
+
+    class _R:
+        points = [_Hit("片段A", "a.md", 0.9), _Hit("片段B", "b.md", 0.8), _Hit("片段C", "c.md", 0.7)]
+    monkeypatch.setattr(rag_store, "_get_qdrant", lambda: fake)
+    monkeypatch.setattr(rag_store, "_ensure_collection", lambda: None)
+    monkeypatch.setattr(rag_store, "_embed", lambda t: [0.1] * 1024)
+    fake.query_points = lambda collection_name, query, limit: _R()
+    # rerank 把顺序翻成 C,A,B
+    monkeypatch.setattr(rag_store, "_rerank", lambda query, docs: [2, 0, 1])
+    out = rag_store.search("q", top_k=2)
+    assert [t[0] for t in out] == ["片段C", "片段A"]   # 精排后取 top_k=2
+
+
+def test_search_rerank_failure_degrades(cfg, monkeypatch):
+    fake = _FakeQdrant()
+
+    class _R:
+        points = [_Hit("片段A", "a.md", 0.9), _Hit("片段B", "b.md", 0.8)]
+    monkeypatch.setattr(rag_store, "_get_qdrant", lambda: fake)
+    monkeypatch.setattr(rag_store, "_ensure_collection", lambda: None)
+    monkeypatch.setattr(rag_store, "_embed", lambda t: [0.1] * 1024)
+    fake.query_points = lambda collection_name, query, limit: _R()
+
+    def boom(query, docs):
+        raise RuntimeError("rerank api down")
+    monkeypatch.setattr(rag_store, "_rerank", boom)
+    out = rag_store.search("q", top_k=2)   # rerank 挂 → 降级用向量顺序
+    assert [t[0] for t in out] == ["片段A", "片段B"]
