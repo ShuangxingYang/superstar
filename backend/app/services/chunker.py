@@ -53,6 +53,10 @@ def _recursive_split(text: str, chunk_size: int, overlap: int, seps: list[str]) 
             if buf:
                 chunks.append(buf)
             buf = piece
+    # 收尾冲最后一块。已知局限:贪心切块可能在此落下一个很短的孤儿尾块
+    # (buf 近满时来个小 piece 就独立成块)。同 LangChain 内核的固有性质,不是 bug;
+    # _apply_overlap 会给它补前块尾部 overlap 兜住语义。尾块合并(min_chunk_size)留二版,
+    # 见 spec 4.2「已知局限」。
     if buf:
         chunks.append(buf)
     return chunks
