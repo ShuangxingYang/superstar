@@ -34,3 +34,20 @@ def test_404_on_missing(client):
     assert client.get("/api/sessions/nope").status_code == 404
     assert client.patch("/api/sessions/nope", json={"title": "x"}).status_code == 404
     assert client.delete("/api/sessions/nope").status_code == 404
+
+
+# ============ P2b: get_session 带 pending(历史回放待审批卡)============
+from app.agent import pending
+
+
+def test_get_session_includes_pending(client):
+    sid = session_store.create()
+    session_store.append_message(sid, {"role": "user", "content": "hi"})
+    # 无 pending → null(向后兼容:新增字段)
+    assert client.get(f"/api/sessions/{sid}").json()["pending"] is None
+    # 有 pending → 回内容
+    pending.write(sid, [{"id": "w1", "type": "function",
+                         "function": {"name": "write_file", "arguments": "{}"}}],
+                  {"w1": {"kind": "write", "path": "a", "diff": "d"}})
+    body = client.get(f"/api/sessions/{sid}").json()
+    assert body["pending"]["tool_calls"][0]["id"] == "w1"

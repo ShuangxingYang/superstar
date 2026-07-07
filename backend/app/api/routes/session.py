@@ -8,6 +8,7 @@ import logging
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import Response
 
+from app.agent import pending as pending_store
 from app.models import schemas
 from app.services import session_store
 
@@ -22,11 +23,12 @@ def list_sessions() -> list[schemas.SessionMeta]:
 
 @router.get("/{sid}")
 def get_session(sid: str) -> dict:
-    """切会话时前端拉历史铺进消息流。"""
+    """切会话时前端拉历史铺进消息流;pending 用于还原「待批准」卡片(向后兼容新增字段)。"""
     try:
-        return {"messages": session_store.read_messages(sid)}
+        messages = session_store.read_messages(sid)
     except session_store.SessionNotFound:
         raise HTTPException(status_code=404, detail="session not found")
+    return {"messages": messages, "pending": pending_store.read(sid)}
 
 
 @router.patch("/{sid}")
