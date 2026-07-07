@@ -11,17 +11,20 @@ export default function App() {
     sessions,
     currentId,
     streaming,
+    hasPending,
     send,
+    approve,
     newSession,
     switchSession,
     removeSession,
     rename,
   } = useChatStream()
   const [input, setInput] = useState('')
+  const locked = streaming || hasPending // 流式中 or 有待审批 → 锁输入
 
   const onSend = () => {
     const text = input.trim()
-    if (!text || streaming) return
+    if (!text || locked) return
     setInput('')
     void send(text)
   }
@@ -41,7 +44,14 @@ export default function App() {
         <div className="messages">
           {messages.map((it, i) =>
             it.kind === 'tool' ? (
-              <ToolCallCard key={i} name={it.name} args={it.args} result={it.result} />
+              <ToolCallCard
+                key={i}
+                name={it.name}
+                args={it.args}
+                result={it.result}
+                approval={it.approval}
+                onDecision={(d) => approve(it.id, d)}
+              />
             ) : (
               <div key={i} className={`msg ${it.role}`}>
                 <b>{it.role === 'user' ? '你' : 'AI'}:</b> {it.content}
@@ -55,9 +65,10 @@ export default function App() {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && onSend()}
-            placeholder="说点什么…"
+            disabled={locked}
+            placeholder={hasPending ? '请先处理待批准的操作…' : '说点什么…'}
           />
-          <button onClick={onSend} disabled={streaming}>
+          <button onClick={onSend} disabled={locked}>
             发送
           </button>
         </div>

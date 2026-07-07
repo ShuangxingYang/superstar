@@ -62,3 +62,16 @@
   max-height: 320px;
   overflow: auto;
 }
+
+/* P2b 审批卡片 */
+.tool-card-pending { border-color: #d29922; background: #fff8e6; }
+.approval-actions { display: flex; gap: 8px; margin-top: 8px; }
+.approval-actions button { padding: 5px 14px; border: 0; border-radius: 6px; cursor: pointer; font-size: 13px; }
+.btn-approve { background: #1a7f37; color: #fff; }
+.btn-reject { background: #cf222e; color: #fff; }
+.diff { margin: 0; font-family: ui-monospace, monospace; font-size: 12px; background: #fff; border: 1px solid #eaeef2; border-radius: 4px; max-height: 320px; overflow: auto; }
+.diff > div { padding: 0 8px; white-space: pre-wrap; word-break: break-all; }
+.diff-add { background: #e6ffec; color: #1a7f37; }
+.diff-del { background: #ffebe9; color: #cf222e; }
+.diff-hunk { background: #ddf4ff; color: #0969da; }
+.diff-ctx { color: #57606a; }

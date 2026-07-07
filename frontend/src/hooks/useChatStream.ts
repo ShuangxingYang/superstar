@@ -5,20 +5,30 @@ import {
   getSession,
   listSessions,
   renameSession,
+  resumeChat,
   streamChat,
+  type ApprovalPreview,
   type ChatEvent,
+  type PendingState,
   type SessionMeta,
   type StoredMessage,
 } from '../lib/api'
 
-// 消息流的一项:要么一条文本消息,要么一张工具卡片
+// 消息流的一项:要么一条文本消息,要么一张工具卡片(可含审批子状态)
 export type ChatItem =
   | { kind: 'msg'; role: 'user' | 'assistant'; content: string }
-  | { kind: 'tool'; id: string; name: string; args: string; result?: string }
+  | {
+      kind: 'tool'
+      id: string
+      name: string
+      args: string
+      result?: string
+      approval?: { preview: ApprovalPreview; status: 'pending' | 'approved' | 'rejected' }
+    }
 
-// 历史回放:把后端存的原始消息还原成 ChatItem[](assistant 的 tool_calls → 卡片,
-// role:tool 消息按 tool_call_id 回填对应卡片的 result)
-function messagesToItems(msgs: StoredMessage[]): ChatItem[] {
+// 历史回放:后端原始消息 → ChatItem[](assistant 的 tool_calls → 卡片,role:tool 按 id 回填结果);
+// pending 里未决的 tool_call 还没有结果,标成「待审批」卡片
+function messagesToItems(msgs: StoredMessage[], pending: PendingState): ChatItem[] {
   const items: ChatItem[] = []
   const toolIndex: Record<string, number> = {} // tool_call_id -> items 下标
   for (const m of msgs) {
@@ -34,6 +44,14 @@ function messagesToItems(msgs: StoredMessage[]): ChatItem[] {
       const idx = toolIndex[m.tool_call_id]
       const item = idx != null ? items[idx] : undefined
       if (item && item.kind === 'tool') item.result = m.content ?? ''
+    }
+  }
+  // 还原「待审批」卡片:pending 里的 tool_call 还没有结果,挂上 approval 预览
+  for (const tc of pending?.tool_calls ?? []) {
+    const idx = toolIndex[tc.id]
+    const item = idx != null ? items[idx] : undefined
+    if (item && item.kind === 'tool') {
+      item.approval = { preview: pending!.previews[tc.id], status: 'pending' }
     }
   }
   return items
@@ -62,7 +80,8 @@ export function useChatStream() {
 
   const switchSession = useCallback(async (sid: string) => {
     setCurrentId(sid)
-    setMessages(messagesToItems(await getSession(sid)))
+    const { messages: msgs, pending } = await getSession(sid)
+    setMessages(messagesToItems(msgs, pending))
   }, [])
 
   const removeSession = useCallback(
@@ -85,57 +104,87 @@ export function useChatStream() {
     [refreshSessions],
   )
 
+  // 共享事件处理:send / approve 续流都走它
+  const onEvent = useCallback((e: ChatEvent) => {
+    if (e.type === 'session') {
+      setCurrentId(e.session_id)
+    } else if (e.type === 'approval_required') {
+      // 待审批 → 插一张 pending 卡(带预览,等用户拍板)
+      setMessages((m) => [
+        ...m,
+        { kind: 'tool', id: e.id, name: e.name, args: e.args,
+          approval: { preview: e.preview, status: 'pending' } },
+      ])
+    } else if (e.type === 'tool_call') {
+      setMessages((m) => [...m, { kind: 'tool', id: e.id, name: e.name, args: e.args }])
+    } else if (e.type === 'tool_result') {
+      setMessages((m) =>
+        m.map((it) => (it.kind === 'tool' && it.id === e.id ? { ...it, result: e.result } : it)),
+      )
+    } else if (e.type === 'text') {
+      // 追加到「最后一条 assistant 文本」;若上一项是工具卡片/用户消息,则新起一条
+      setMessages((m) => {
+        const next = [...m]
+        const last = next[next.length - 1]
+        if (last && last.kind === 'msg' && last.role === 'assistant') {
+          next[next.length - 1] = { ...last, content: last.content + e.content }
+        } else {
+          next.push({ kind: 'msg', role: 'assistant', content: e.content })
+        }
+        return next
+      })
+    } else if (e.type === 'error') {
+      setMessages((m) => [...m, { kind: 'msg', role: 'assistant', content: `⚠️ ${e.message}` }])
+    }
+  }, [])
+
   const send = useCallback(
     async (text: string) => {
       setMessages((m) => [...m, { kind: 'msg', role: 'user', content: text }])
       setStreaming(true)
       try {
-        await streamChat(
-          text,
-          (e: ChatEvent) => {
-            if (e.type === 'session') {
-              // 懒创建首句:后端回传新 sid,记为当前会话
-              setCurrentId(e.session_id)
-            } else if (e.type === 'tool_call') {
-              // 新工具调用 → 插一张「运行中」卡片(result 未定义 = 运行中)
-              setMessages((m) => [...m, { kind: 'tool', id: e.id, name: e.name, args: e.args }])
-            } else if (e.type === 'tool_result') {
-              // 同 id 卡片填结果
-              setMessages((m) =>
-                m.map((it) => (it.kind === 'tool' && it.id === e.id ? { ...it, result: e.result } : it)),
-              )
-            } else if (e.type === 'text') {
-              // 追加到「最后一条 assistant 文本」;若上一项是工具卡片/用户消息,则新起一条
-              setMessages((m) => {
-                const next = [...m]
-                const last = next[next.length - 1]
-                if (last && last.kind === 'msg' && last.role === 'assistant') {
-                  next[next.length - 1] = { ...last, content: last.content + e.content }
-                } else {
-                  next.push({ kind: 'msg', role: 'assistant', content: e.content })
-                }
-                return next
-              })
-            } else if (e.type === 'error') {
-              setMessages((m) => [...m, { kind: 'msg', role: 'assistant', content: `⚠️ ${e.message}` }])
-            }
-          },
-          currentId ?? undefined,
-        )
+        await streamChat(text, onEvent, currentId ?? undefined)
       } finally {
         setStreaming(false)
         void refreshSessions() // 拉最新标题/时间(新会话首句后列表要更新)
       }
     },
-    [currentId, refreshSessions],
+    [currentId, onEvent, refreshSessions],
   )
+
+  // 审批:批准/拒绝一个待审批卡片,续跑循环
+  const approve = useCallback(
+    async (toolCallId: string, decision: 'approve' | 'reject') => {
+      if (!currentId) return
+      setMessages((m) =>
+        m.map((it) =>
+          it.kind === 'tool' && it.id === toolCallId && it.approval
+            ? { ...it, approval: { ...it.approval, status: decision === 'approve' ? 'approved' : 'rejected' } }
+            : it,
+        ),
+      )
+      setStreaming(true)
+      try {
+        await resumeChat(currentId, toolCallId, decision, onEvent)
+      } finally {
+        setStreaming(false)
+        void refreshSessions()
+      }
+    },
+    [currentId, onEvent, refreshSessions],
+  )
+
+  // 有待审批卡片时锁输入(必须先处理审批)
+  const hasPending = messages.some((it) => it.kind === 'tool' && it.approval?.status === 'pending')
 
   return {
     messages,
     sessions,
     currentId,
     streaming,
+    hasPending,
     send,
+    approve,
     newSession,
     switchSession,
     removeSession,
