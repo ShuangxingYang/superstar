@@ -75,3 +75,14 @@
 .diff-del { background: #ffebe9; color: #cf222e; }
 .diff-hunk { background: #ddf4ff; color: #0969da; }
 .diff-ctx { color: #57606a; }
+
+/* P3 知识库管理页(布局手写,按钮/进度条/卡片用 shadcn) */
+.kb-manager { padding: 8px; }
+.kb-upload { margin: 12px 0; }
+.kb-error { color: #cf222e; margin: 8px 0; }
+.kb-list { display: flex; flex-direction: column; gap: 6px; margin: 12px 0; }
+.kb-empty { color: #888; font-size: 14px; }
+.kb-source { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kb-chunks { color: #57606a; font-size: 13px; }
+.kb-footer { display: flex; align-items: center; gap: 12px; margin-top: 12px; }
+.kb-stats { color: #57606a; font-size: 13px; }

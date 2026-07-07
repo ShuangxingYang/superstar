@@ -9,6 +9,7 @@ type Props = {
   onSwitch: (sid: string) => void
   onDelete: (sid: string) => void
   onRename: (sid: string, title: string) => void
+  onOpenKb: () => void
 }
 
 export default function SessionList({
@@ -18,6 +19,7 @@ export default function SessionList({
   onSwitch,
   onDelete,
   onRename,
+  onOpenKb,
 }: Props) {
   // 就地编辑:editingId 标记正在改哪条,draft 是输入框草稿
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -36,6 +38,9 @@ export default function SessionList({
     <aside className="sidebar">
       <button className="new-btn" onClick={onNew}>
         + 新建会话
+      </button>
+      <button className="new-btn" onClick={onOpenKb}>
+        📚 知识库
       </button>
       <ul className="session-list">
         {sessions.map((s) => (
