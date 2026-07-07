@@ -7,6 +7,10 @@
     "module": "ESNext",
     "skipLibCheck": true,
 
+    /* 路径别名:@/ → src/(shadcn 约定) */
+    "baseUrl": ".",
+    "paths": { "@/*": ["./src/*"] },
+
     /* Bundler mode */
     "moduleResolution": "bundler",
     "allowImportingTsExtensions": true,
