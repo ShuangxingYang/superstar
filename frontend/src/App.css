@@ -1,79 +1,19 @@
-.app { max-width: 720px; margin: 0 auto; padding: 24px; font-family: system-ui, sans-serif; }
-.messages { display: flex; flex-direction: column; gap: 12px; margin: 16px 0; min-height: 300px; }
-.msg { line-height: 1.6; white-space: pre-wrap; }
-.msg.user { color: #1a1a1a; }
-.msg.assistant { color: #0b6; }
-.composer { display: flex; gap: 8px; }
-.composer input { flex: 1; padding: 10px; border: 1px solid #ccc; border-radius: 8px; }
-.composer button { padding: 10px 20px; border: 0; border-radius: 8px; background: #0b6; color: #fff; cursor: pointer; }
-.composer button:disabled { background: #aaa; cursor: not-allowed; }
+/* 全站布局与组件已改用 Tailwind + shadcn(类内联在各 .tsx),此处只保留
+   diff 行着色——它是 ToolCallCard 里 DiffView 的特化需求(按 +/-/@@ 逐行上色),
+   用手写 CSS 比堆一串条件 Tailwind 类更清晰。 */
 
-/* ---- P1 会话侧边栏 + 两栏布局 ---- */
-.layout { display: flex; height: 100vh; }
-.sidebar { width: 240px; border-right: 1px solid #eee; padding: 12px; overflow-y: auto; box-sizing: border-box; }
-.new-btn { width: 100%; padding: 8px; border: 1px solid #0b6; background: #fff; color: #0b6; border-radius: 8px; cursor: pointer; margin-bottom: 12px; }
-.session-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
-.session-item { display: flex; align-items: center; justify-content: space-between; padding: 8px; border-radius: 8px; cursor: pointer; font-size: 14px; }
-.session-item:hover { background: #f5f5f5; }
-.session-item.active { background: #e6f7ef; }
-.session-item .title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
-.session-item .actions { display: none; gap: 4px; }
-.session-item:hover .actions { display: flex; }
-.session-item .actions button { border: 0; background: transparent; cursor: pointer; font-size: 13px; }
-.session-item input { width: 100%; padding: 4px; border: 1px solid #0b6; border-radius: 6px; }
-.app { flex: 1; max-width: 720px; }
-
-/* 工具调用卡片:让用户「看见 Agent 在干什么」,默认折叠只显示摘要 */
-.tool-card {
-  border: 1px solid #d0d7de;
-  border-radius: 6px;
-  margin: 6px 0;
-  background: #f6f8fa;
-  font-size: 13px;
-  overflow: hidden;
-}
-.tool-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 10px;
-  cursor: pointer;
-  user-select: none;
-}
-.tool-name { font-weight: 600; white-space: nowrap; }
-.tool-summary {
-  flex: 1;
-  color: #57606a;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.tool-toggle { color: #57606a; }
-.tool-body { border-top: 1px solid #d0d7de; padding: 8px 10px; }
-.tool-label { font-weight: 600; color: #57606a; margin: 4px 0 2px; }
-.tool-body pre {
+.diff {
   margin: 0;
-  padding: 6px 8px;
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
   background: #fff;
   border: 1px solid #eaeef2;
   border-radius: 4px;
-  white-space: pre-wrap;
-  word-break: break-all;
   max-height: 320px;
   overflow: auto;
 }
-
-/* P2b 审批卡片 */
-.tool-card-pending { border-color: #d29922; background: #fff8e6; }
-.approval-actions { display: flex; gap: 8px; margin-top: 8px; }
-.approval-actions button { padding: 5px 14px; border: 0; border-radius: 6px; cursor: pointer; font-size: 13px; }
-.btn-approve { background: #1a7f37; color: #fff; }
-.btn-reject { background: #cf222e; color: #fff; }
-.diff { margin: 0; font-family: ui-monospace, monospace; font-size: 12px; background: #fff; border: 1px solid #eaeef2; border-radius: 4px; max-height: 320px; overflow: auto; }
 .diff > div { padding: 0 8px; white-space: pre-wrap; word-break: break-all; }
 .diff-add { background: #e6ffec; color: #1a7f37; }
 .diff-del { background: #ffebe9; color: #cf222e; }
 .diff-hunk { background: #ddf4ff; color: #0969da; }
 .diff-ctx { color: #57606a; }
-
-/* P3 知识库管理页改用 Tailwind + shadcn 组件,布局类内联在 KbManager.tsx,此处不再需要手写 CSS。 */
