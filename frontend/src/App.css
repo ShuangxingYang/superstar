@@ -1,19 +1,18 @@
 /* 全站布局与组件已改用 Tailwind + shadcn(类内联在各 .tsx),此处只保留
    diff 行着色——它是 ToolCallCard 里 DiffView 的特化需求(按 +/-/@@ 逐行上色),
-   用手写 CSS 比堆一串条件 Tailwind 类更清晰。 */
+   用手写 CSS 比堆一串条件 Tailwind 类更清晰。配色对齐液态玻璃主题。 */
 
 .diff {
   margin: 0;
-  font-family: ui-monospace, monospace;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
   font-size: 12px;
-  background: #fff;
-  border: 1px solid #eaeef2;
-  border-radius: 4px;
+  background: hsl(var(--background));
+  border-radius: 10px;
   max-height: 320px;
   overflow: auto;
 }
-.diff > div { padding: 0 8px; white-space: pre-wrap; word-break: break-all; }
-.diff-add { background: #e6ffec; color: #1a7f37; }
-.diff-del { background: #ffebe9; color: #cf222e; }
-.diff-hunk { background: #ddf4ff; color: #0969da; }
-.diff-ctx { color: #57606a; }
+.diff > div { padding: 2px 12px; white-space: pre-wrap; word-break: break-all; }
+.diff-add { background: rgba(91, 91, 240, 0.08); color: #5b5bf0; }
+.diff-del { background: rgba(240, 80, 107, 0.08); color: #f0506b; }
+.diff-hunk { background: rgba(91, 91, 240, 0.12); color: #4a4ad0; }
+.diff-ctx { color: hsl(var(--muted-foreground)); }

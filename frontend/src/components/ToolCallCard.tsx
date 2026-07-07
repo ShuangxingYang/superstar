@@ -1,9 +1,6 @@
 import { Check, ChevronDown, ChevronRight, Wrench, X } from 'lucide-react'
 import { useState } from 'react'
 
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { Card } from '@/components/ui/card'
 import { cn } from '@/lib/utils'
 
 import type { ApprovalPreview } from '../lib/api'
@@ -57,22 +54,40 @@ export default function ToolCallCard({ name, args, result, approval, onDecision 
       : (result ?? '').split('\n')[0] || '(空)'
 
   return (
-    <Card className={cn('overflow-hidden text-sm', pending && 'border-destructive/50 bg-destructive/5')}>
-      {/* 头部:图标 + 工具名 + 状态徽标 + 摘要 + 折叠箭头 */}
+    <div
+      className={cn(
+        'overflow-hidden rounded-2xl bg-card text-sm transition-shadow',
+        pending ? 'shadow-[0_4px_20px_rgba(240,80,107,.18)]' : 'shadow-soft-md hover:shadow-soft-lg',
+      )}
+    >
+      {/* 头部:图标底块 + 工具名 + 胶囊状态 + 摘要 + 折叠箭头 */}
       <button
-        className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-accent/40"
+        className="flex w-full items-center gap-2.5 px-4 py-3 text-left"
         onClick={() => setOpen((o) => !o)}
       >
-        <Wrench className="h-4 w-4 shrink-0 text-muted-foreground" />
-        <span className="font-medium">{name}</span>
+        <span
+          className={cn(
+            'flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-[10px]',
+            pending ? 'bg-destructive/10 text-destructive' : 'bg-primary/10 text-primary',
+          )}
+        >
+          <Wrench className="h-4 w-4" />
+        </span>
+        <span className="font-mono text-[13px] font-semibold">{name}</span>
         {pending ? (
-          <Badge variant="destructive">待审批</Badge>
+          <span className="grad-danger rounded-full px-2.5 py-[3px] font-mono text-[10px] font-semibold text-white">
+            待审批
+          </span>
         ) : running ? (
-          <Badge variant="secondary">运行中</Badge>
+          <span className="rounded-full bg-primary/10 px-2.5 py-[3px] font-mono text-[10px] font-semibold text-primary">
+            运行中
+          </span>
         ) : (
-          <Badge variant="outline">完成</Badge>
+          <span className="rounded-full bg-secondary px-2.5 py-[3px] font-mono text-[10px] font-semibold text-muted-foreground">
+            完成
+          </span>
         )}
-        <span className="flex-1 truncate text-muted-foreground">{summary}</span>
+        <span className="flex-1 truncate text-[13px] text-muted-foreground">{summary}</span>
         {open ? (
           <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
         ) : (
@@ -81,45 +96,61 @@ export default function ToolCallCard({ name, args, result, approval, onDecision 
       </button>
 
       {open && (
-        <div className="border-t px-3 py-2">
+        <div className="border-t px-4 py-3">
           {pending && approval.preview.kind === 'write' && (
             <>
-              <div className="mb-1 font-medium text-muted-foreground">将写入 {approval.preview.path}</div>
+              <div className="mb-1.5 font-mono text-[10.5px] uppercase tracking-wide text-muted-foreground">
+                将写入 {approval.preview.path}
+              </div>
               <DiffView diff={approval.preview.diff} />
             </>
           )}
           {pending && approval.preview.kind === 'command' && (
             <>
-              <div className="mb-1 font-medium text-muted-foreground">将执行命令 ⚠️ 灰名单</div>
-              <pre className="overflow-x-auto rounded bg-muted px-2 py-1 text-xs">
+              <div className="mb-1.5 font-mono text-[10.5px] uppercase tracking-wide text-muted-foreground">
+                将执行命令 ⚠️ 灰名单
+              </div>
+              <pre className="overflow-x-auto rounded-[10px] bg-background px-3 py-2.5 font-mono text-xs">
                 {approval.preview.command}
               </pre>
             </>
           )}
           {!pending && (
             <>
-              <div className="mb-1 font-medium text-muted-foreground">参数</div>
-              <pre className="overflow-x-auto rounded bg-muted px-2 py-1 text-xs">{prettyArgs}</pre>
-              <div className="mb-1 mt-2 font-medium text-muted-foreground">结果</div>
-              <pre className="max-h-80 overflow-auto whitespace-pre-wrap break-all rounded bg-muted px-2 py-1 text-xs">
+              <div className="mb-1.5 font-mono text-[10.5px] uppercase tracking-wide text-muted-foreground">
+                参数
+              </div>
+              <pre className="overflow-x-auto rounded-[10px] bg-background px-3 py-2.5 font-mono text-xs">
+                {prettyArgs}
+              </pre>
+              <div className="mb-1.5 mt-2.5 font-mono text-[10.5px] uppercase tracking-wide text-muted-foreground">
+                结果
+              </div>
+              <pre className="max-h-80 overflow-auto whitespace-pre-wrap break-all rounded-[10px] bg-background px-3 py-2.5 font-mono text-xs">
                 {running ? '运行中…' : result}
               </pre>
             </>
           )}
           {pending && (
-            <div className="mt-3 flex gap-2">
-              <Button size="sm" onClick={() => onDecision?.('approve')}>
-                <Check className="h-4 w-4" />
+            <div className="mt-3 flex gap-2.5">
+              <button
+                onClick={() => onDecision?.('approve')}
+                className="grad-brand shadow-soft-sm inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-[13px] font-semibold text-white transition-[filter] hover:brightness-105"
+              >
+                <Check className="h-4 w-4" strokeWidth={2.5} />
                 批准
-              </Button>
-              <Button size="sm" variant="destructive" onClick={() => onDecision?.('reject')}>
-                <X className="h-4 w-4" />
+              </button>
+              <button
+                onClick={() => onDecision?.('reject')}
+                className="grad-danger shadow-soft-sm inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-[13px] font-semibold text-white transition-[filter] hover:brightness-105"
+              >
+                <X className="h-4 w-4" strokeWidth={2.5} />
                 拒绝
-              </Button>
+              </button>
             </div>
           )}
         </div>
       )}
-    </Card>
+    </div>
   )
 }

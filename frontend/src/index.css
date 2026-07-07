@@ -2,38 +2,76 @@
 @tailwind components;
 @tailwind utilities;
 
-/* shadcn CSS 变量(slate 基色,亮色)。老页面用 App.css 显式类,不受这些变量影响。 */
+/* ============ shadcn CSS 变量 —— 液态玻璃色板(靛紫 × 冷白) ============
+   改这里,所有用 bg-primary/text-muted-foreground 的组件自动换色。HSL 三元组。 */
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
-    --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
-    --primary: 142 71% 40%;
+    --background: 225 33% 97%;      /* #F6F7FB 冷白底 */
+    --foreground: 230 22% 10%;      /* #14161F 冷墨字 */
+    --card: 0 0% 100%;              /* #FFFFFF 卡片纯白 */
+    --card-foreground: 230 22% 10%;
+    --primary: 240 84% 65%;         /* #5B5BF0 靛紫 */
     --primary-foreground: 0 0% 100%;
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
-    --destructive: 0 72% 51%;
+    --secondary: 228 33% 95%;       /* #EEF0F6 冷浅底 */
+    --secondary-foreground: 230 22% 20%;
+    --muted: 228 33% 95%;
+    --muted-foreground: 225 11% 40%;/* #5A6070 次级 */
+    --accent: 228 33% 95%;
+    --accent-foreground: 230 22% 20%;
+    --destructive: 350 84% 63%;     /* #F0506B 玫红 */
     --destructive-foreground: 0 0% 100%;
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 142 71% 40%;
-    --radius: 0.5rem;
+    --border: 225 27% 94%;          /* #ECEEF4 极浅冷分隔 */
+    --input: 225 27% 94%;
+    --ring: 240 84% 65%;
+    --radius: 0.75rem;              /* 液态风更圆润 */
   }
 }
 
-:root {
-  font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
-  line-height: 1.5;
-  color: #1a1a1a;
-  background-color: #ffffff;
+@layer base {
+  * { border-color: hsl(var(--border)); }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    font-family: 'Geist', system-ui, sans-serif;
+    color: hsl(var(--foreground));
+    background-color: hsl(var(--background));
+    /* 氛围:两团极淡品牌光晕,制造流动感 */
+    background-image:
+      radial-gradient(600px circle at 12% 8%, rgba(139,109,245,.06), transparent 55%),
+      radial-gradient(700px circle at 88% 92%, rgba(91,91,240,.05), transparent 55%);
+    background-attachment: fixed;
+    -webkit-font-smoothing: antialiased;
+  }
 }
 
-body {
-  margin: 0;
-  min-height: 100vh;
+/* ============ 液态玻璃特化(shadcn 变量表达不了的:渐变/毛玻璃/流光/柔和阴影) ============ */
+@layer components {
+  /* 品牌渐变:头像、主按钮、块数胶囊、数字读数 */
+  .grad-brand { background-image: linear-gradient(135deg, #6366F1 0%, #8B6DF5 100%); }
+  .grad-text {
+    background-image: linear-gradient(135deg, #6366F1 0%, #8B6DF5 100%);
+    -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+  }
+  .grad-danger { background-image: linear-gradient(135deg, #F0506B 0%, #F76B8A 100%); }
+
+  /* 多层柔和阴影:液态悬浮感 */
+  .shadow-soft-sm { box-shadow: 0 1px 2px rgba(20,22,31,.04), 0 2px 6px rgba(20,22,31,.04); }
+  .shadow-soft-md { box-shadow: 0 2px 8px rgba(20,22,31,.05), 0 8px 24px rgba(20,22,31,.06); }
+  .shadow-soft-lg { box-shadow: 0 8px 28px rgba(91,91,240,.12), 0 2px 8px rgba(20,22,31,.05); }
+
+  /* 毛玻璃层:侧栏/顶栏 */
+  .glass {
+    background: rgba(255,255,255,.72);
+    backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+  }
+
+  /* 流光:仅「新建会话」主入口用。一道斜高光扫过,元素不位移。 */
+  .sheen { position: relative; overflow: hidden; }
+  .sheen::before {
+    content: ''; position: absolute; top: 0; bottom: 0; width: 60%; left: -80%;
+    pointer-events: none; border-radius: inherit;
+    background: linear-gradient(105deg, transparent, rgba(255,255,255,.45), transparent);
+    transition: left .55s cubic-bezier(.22,.61,.36,1);
+  }
+  .sheen:hover::before { left: 130%; }
 }
