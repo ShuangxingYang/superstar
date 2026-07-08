@@ -100,32 +100,32 @@ from app.agent.tools.fs import ReadFileArgs, read_file  # noqa: E402
 
 registry.register(
     "read_file", read_file, ReadFileArgs,
-    "读取工作区内一个文件的文本内容(相对路径)。超大文件会自动截断。",
+    "读取一个文件的文本内容(绝对路径,或相对默认工作目录);须在允许目录内。超大文件会自动截断。",
 )
 
 from app.agent.tools.fs import WriteFileArgs, write_file  # noqa: E402
 
 registry.register(
     "write_file", write_file, WriteFileArgs,
-    "把文本内容写入工作区内一个文件(相对路径);不存在则新建,存在则整体覆盖。此操作需用户审批。",
+    "把文本内容写入一个文件(绝对路径,或相对默认工作目录);不存在则新建,存在则整体覆盖。此操作需用户审批。",
 )
 
 from app.agent.tools.search import GlobArgs, GrepArgs, glob, grep  # noqa: E402
 
 registry.register(
     "grep", grep, GrepArgs,
-    "在工作区内按正则逐行搜索,返回 相对路径:行号:内容。命中过多会截断。",
+    "按正则逐行搜索,返回 绝对路径:行号:内容。留空 path 搜所有允许目录。命中过多会截断。",
 )
 registry.register(
     "glob", glob, GlobArgs,
-    "按通配模式(如 **/*.py)列出工作区内匹配的文件路径。",
+    "按通配模式(如 **/*.py)在所有允许目录下列出匹配的文件(绝对路径)。",
 )
 
 from app.agent.tools.shell import RunCommandArgs, run_command  # noqa: E402
 
 registry.register(
     "run_command", run_command, RunCommandArgs,
-    "在工作区目录下执行一条 shell 命令并返回输出(退出码 + stdout/stderr)。危险命令会被拒绝,其余需用户审批。",
+    "执行一条 shell 命令并返回输出(退出码 + stdout/stderr);默认在默认工作目录,可传 cwd 指定允许目录内的其他目录。危险命令会被拒绝,其余需用户审批。",
 )
 
 from app.agent.tools.rag import SearchKbArgs, search_kb  # noqa: E402
@@ -133,4 +133,17 @@ from app.agent.tools.rag import SearchKbArgs, search_kb  # noqa: E402
 registry.register(
     "search_kb", search_kb, SearchKbArgs,
     "在文档知识库里语义检索,返回最相关的片段和来源。需要引用资料/文档内容回答时用它。",
+)
+
+from app.agent.tools.workspace import (  # noqa: E402
+    AddWorkspaceArgs, RemoveWorkspaceArgs, add_workspace, remove_workspace,
+)
+
+registry.register(
+    "add_workspace", add_workspace, AddWorkspaceArgs,
+    "把一个目录(绝对路径)加入可访问白名单,之后就能读写它。此操作需用户审批。",
+)
+registry.register(
+    "remove_workspace", remove_workspace, RemoveWorkspaceArgs,
+    "把一个目录从可访问白名单移除。",
 )
