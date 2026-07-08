@@ -8,6 +8,7 @@ gate.py —— 处置判定:给一个 tool_call,决定「直接跑 / 直接拒 /
 """
 import difflib
 import logging
+from pathlib import Path
 
 from app.services import security
 from app.services.security import SecurityError
@@ -39,4 +40,9 @@ def gate_tool_call(name: str, args: dict) -> tuple[str, dict | None]:
             return "deny", None
         return "approve", {"kind": "command", "command": args.get("command", ""), "level": "gray"}
 
-    return "auto", None                                        # 只读工具直接跑
+    if name == "add_workspace":
+        # 扩权操作,需审批;预览用 resolve() 后的绝对路径,让用户看清真实目标(防 ~/.. 障眼)
+        abs_path = str(Path(args.get("path", "")).expanduser().resolve())
+        return "approve", {"kind": "add_workspace", "path": abs_path}
+
+    return "auto", None                                        # 只读工具 / remove_workspace(收权无害)直接跑

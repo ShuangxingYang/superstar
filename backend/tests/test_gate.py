@@ -45,3 +45,17 @@ def test_gate_command_gray_approve(ws):
     action, preview = gate_tool_call("run_command", {"command": "python demo.py"})
     assert action == "approve"
     assert preview["kind"] == "command" and preview["command"] == "python demo.py"
+
+
+def test_gate_add_workspace_needs_approval():
+    # add_workspace 需审批;预览展示 expanduser().resolve() 后的绝对路径(防 ~/.. 障眼)
+    action, preview = gate_tool_call("add_workspace", {"path": "~/proj"})
+    assert action == "approve"
+    assert preview["kind"] == "add_workspace"
+    assert preview["path"].startswith("/")          # 绝对路径
+    assert "~" not in preview["path"]
+
+
+def test_gate_remove_workspace_auto():
+    # remove_workspace 收权无害 → 自动放行
+    assert gate_tool_call("remove_workspace", {"path": "/x"}) == ("auto", None)
