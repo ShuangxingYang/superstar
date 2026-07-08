@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils'
 
 import KbManager from './components/KbManager'
 import SessionList from './components/SessionList'
+import SettingsPanel from './components/SettingsPanel'
 import ToolCallCard from './components/ToolCallCard'
 import { useChatStream } from './hooks/useChatStream'
 import './App.css'
@@ -26,7 +27,7 @@ export default function App() {
     rename,
   } = useChatStream()
   const [input, setInput] = useState('')
-  const [view, setView] = useState<'chat' | 'kb'>('chat') // 右侧主区:聊天 or 知识库页
+  const [view, setView] = useState<'chat' | 'kb' | 'settings'>('chat') // 右侧主区:聊天 / 知识库 / 设置
   const locked = streaming || hasPending // 流式中 or 有待审批 → 锁输入
 
   // 消息流自动跟随:仅当用户本来就贴在底部时,新消息才自动滚到底;
@@ -72,12 +73,17 @@ export default function App() {
         onRename={rename}
         onOpenChat={() => setView('chat')}
         onOpenKb={() => setView('kb')}
+        onOpenSettings={() => setView('settings')}
       />
 
       <main className="flex min-w-0 flex-1 flex-col">
         {view === 'kb' ? (
           <div className="flex-1 overflow-y-auto">
             <KbManager />
+          </div>
+        ) : view === 'settings' ? (
+          <div className="flex-1 overflow-y-auto">
+            <SettingsPanel />
           </div>
         ) : (
           <>

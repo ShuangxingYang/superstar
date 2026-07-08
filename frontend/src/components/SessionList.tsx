@@ -7,7 +7,7 @@ import { cn } from '@/lib/utils'
 
 import type { SessionMeta } from '../lib/api'
 
-type View = 'chat' | 'kb'
+type View = 'chat' | 'kb' | 'settings'
 
 type Props = {
   sessions: SessionMeta[]
@@ -19,6 +19,7 @@ type Props = {
   onRename: (sid: string, title: string) => void
   onOpenChat: () => void
   onOpenKb: () => void
+  onOpenSettings: () => void
 }
 
 export default function SessionList({
@@ -31,6 +32,7 @@ export default function SessionList({
   onRename,
   onOpenChat,
   onOpenKb,
+  onOpenSettings,
 }: Props) {
   // 就地编辑:editingId 标记正在改哪条,draft 是输入框草稿
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -59,7 +61,7 @@ export default function SessionList({
           <BookOpen className="h-5 w-5" />
         </NavIcon>
         <div className="flex-1" />
-        <NavIcon label="设置(敬请期待)" active={false} disabled onClick={() => {}}>
+        <NavIcon label="设置" active={activeView === 'settings'} onClick={onOpenSettings}>
           <Settings className="h-5 w-5" />
         </NavIcon>
       </nav>
