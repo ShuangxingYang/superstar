@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 
+import ContextPanel from './components/ContextPanel'
 import KbManager from './components/KbManager'
 import SessionList from './components/SessionList'
 import SettingsPanel from './components/SettingsPanel'
@@ -151,6 +152,14 @@ export default function App() {
           </>
         )}
       </main>
+
+      {/* 右栏上下文面板:仅聊天视图显示(知识库/设置页占满主区,保持宽敞) */}
+      {view === 'chat' && (
+        <ContextPanel
+          onOpenKb={() => setView('kb')}
+          onOpenSettings={() => setView('settings')}
+        />
+      )}
     </div>
   )
 }
