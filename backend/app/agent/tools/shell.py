@@ -19,12 +19,17 @@ MAX_OUTPUT = 4000      # 字符:防爆上下文
 
 
 class RunCommandArgs(BaseModel):
-    command: str = Field(description="要在工作区目录下执行的 shell 命令")
+    command: str = Field(description="要执行的 shell 命令")
+    cwd: str | None = Field(
+        default=None,
+        description="命令工作目录(绝对路径,须在允许目录内);留空则用默认工作目录",
+    )
 
 
 def run_command(args: RunCommandArgs) -> str:
-    cwd = security.get_default_cwd()                # 命令在默认工作目录里跑
-    logger.info("执行命令: %s", args.command)
+    # 传了 cwd 就过沙箱校验(越界抛 SecurityError,由 registry 兜成「安全拦截」);没传用默认工作目录
+    cwd = security.safe_path(args.cwd) if args.cwd else security.get_default_cwd()
+    logger.info("执行命令: %s (cwd=%s)", args.command, cwd)
     try:
         proc = subprocess.run(
             args.command, shell=True, cwd=cwd,

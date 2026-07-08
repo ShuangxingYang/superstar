@@ -182,6 +182,21 @@ def test_run_command_truncates(ws):
     assert "输出过长已截断" in run_command(RunCommandArgs(command=cmd))
 
 
+def test_run_command_custom_cwd(ws):
+    # 传 cwd=允许目录内的子目录 → 命令在那里跑
+    sub = ws / "sub"
+    sub.mkdir()
+    (sub / "marker.txt").write_text("", encoding="utf-8")
+    out = run_command(RunCommandArgs(command="ls", cwd=str(sub)))
+    assert "marker.txt" in out
+
+
+def test_run_command_cwd_out_of_bounds(ws):
+    # 传越界 cwd(/etc,不在允许目录内)→ safe_path 抛 SecurityError
+    with pytest.raises(SecurityError):
+        run_command(RunCommandArgs(command="ls", cwd="/etc"))
+
+
 def test_search_kb_formats_with_source(monkeypatch):
     from app.agent.tools import rag
     monkeypatch.setattr(rag.rag_store, "search",
