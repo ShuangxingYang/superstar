@@ -12,17 +12,7 @@ export default defineConfig({
   },
   server: {
     proxy: {
-      // 显式配置:SSE 流式对话必须逐条透传,不能被代理缓冲。
-      // 去掉 Accept-Encoding 防止中间层 gzip(gzip 要攒够一块才能解压,会把逐 token 的流憋成整批)。
-      '/api': {
-        target: 'http://127.0.0.1:8000',
-        changeOrigin: true,
-        configure: (proxy) => {
-          proxy.on('proxyReq', (proxyReq) => {
-            proxyReq.setHeader('Accept-Encoding', 'identity')
-          })
-        },
-      },
+      '/api': 'http://127.0.0.1:8000',
     },
   },
 })
