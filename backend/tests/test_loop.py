@@ -66,7 +66,7 @@ def ready(tmp_path, monkeypatch):
     proj = tmp_path / "proj"
     proj.mkdir()
     (proj / "a.py").write_text("def foo(): pass\n", encoding="utf-8")
-    config_store.update({"security": {"workspace_dir": str(proj)}})
+    config_store.update({"security": {"default_cwd": str(proj), "allowed_dirs": []}})
     monkeypatch.setattr(llm, "get_llm_client", lambda: (_Client(), "fake"))
     sid = session_store.create()
     session_store.append_message(sid, {"role": "user", "content": "搜一下 def"})
@@ -182,7 +182,7 @@ def p2b_ready(tmp_path, monkeypatch):
     config_store._reset_cache()
     proj = tmp_path / "proj"
     proj.mkdir()
-    config_store.update({"security": {"workspace_dir": str(proj)}})
+    config_store.update({"security": {"default_cwd": str(proj), "allowed_dirs": []}})
     client = _WriteClient()                                   # 共享实例:calls 跨 run+resume 累计
     monkeypatch.setattr(llm, "get_llm_client", lambda: (client, "fake"))
     sid = session_store.create()

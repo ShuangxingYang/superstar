@@ -107,7 +107,7 @@ def test_chat_with_tool(tmp_path, monkeypatch):
     proj = tmp_path / "proj"
     proj.mkdir()
     (proj / "x.py").write_text("", encoding="utf-8")
-    config_store.update({"security": {"workspace_dir": str(proj)}})
+    config_store.update({"security": {"default_cwd": str(proj), "allowed_dirs": []}})
     monkeypatch.setattr(llm, "get_llm_client", lambda: (_ToolClient(), "fake"))
     from app.api.main import app
     c = TestClient(app)
@@ -150,7 +150,7 @@ def client_ws(tmp_path, monkeypatch):
     config_store._reset_cache()
     proj = tmp_path / "proj"
     proj.mkdir()
-    config_store.update({"security": {"workspace_dir": str(proj)}})
+    config_store.update({"security": {"default_cwd": str(proj), "allowed_dirs": []}})
     client_obj = _WriteClientC()                                  # 共享实例:calls 跨 stream+resume 累计
     monkeypatch.setattr(llm, "get_llm_client", lambda: (client_obj, "fake"))
     from app.api.main import app

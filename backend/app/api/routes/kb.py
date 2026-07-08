@@ -35,7 +35,7 @@ def _safe_kb_path(source: str) -> Path:
     """把 source 钉进 kb_dir 内;越界(../、绝对路径、软链接)→ 400。
 
     照 security.safe_path 的姿势:(root / source) 再 resolve,判它是不是 root 的后代。
-    kb 沙箱根是 kb_dir(不是 workspace_dir),所以不能直接复用 safe_path。
+    kb 沙箱根是 kb_dir(不是工作区允许根),所以不能直接复用 security.safe_path。
     """
     root = _kb_dir()
     target = (root / source).resolve()

@@ -35,7 +35,9 @@ DEFAULTS: dict = {
         "dimension": 1024,  # 建 Qdrant 集合 + 维度校验用;换模型维度变了要重建
     },
     "security": {
-        "workspace_dir": "",
+        # default_cwd = 命令默认 cwd + 相对路径基准(agent 的"家");allowed_dirs = 白名单可访问根组
+        "default_cwd": "~/.superstar",
+        "allowed_dirs": ["/Users/shuangxingyang/Desktop"],
         "kb_dir": "",
         "cmd_whitelist": ["grep", "ls", "cat", "git status", "find", "wc"],
         "cmd_blacklist": ["rm -rf", "sudo", "curl", "wget", "mkfs", "dd"],

@@ -23,7 +23,7 @@ class RunCommandArgs(BaseModel):
 
 
 def run_command(args: RunCommandArgs) -> str:
-    cwd = security.get_workspace()                  # 命令在工作区里跑
+    cwd = security.get_default_cwd()                # 命令在默认工作目录里跑
     logger.info("执行命令: %s", args.command)
     try:
         proc = subprocess.run(

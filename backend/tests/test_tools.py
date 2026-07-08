@@ -73,7 +73,8 @@ def ws(tmp_path, monkeypatch):
     config_store._reset_cache()
     proj = tmp_path / "proj"
     proj.mkdir()
-    config_store.update({"security": {"workspace_dir": str(proj)}})
+    # allowed_dirs 显式清空,隔离 DEFAULTS 里的真实 Desktop(否则 grep/glob 会搜到工作区外)
+    config_store.update({"security": {"default_cwd": str(proj), "allowed_dirs": []}})
     return proj
 
 
@@ -106,7 +107,8 @@ from app.agent.tools.search import GlobArgs, GrepArgs, glob, grep
 def test_grep_hit(ws):
     (ws / "a.py").write_text("def foo():\n    pass\n", encoding="utf-8")
     out = grep(GrepArgs(pattern="def "))
-    assert "a.py:1:def foo():" in out
+    # 多根搜索输出绝对路径
+    assert f"{(ws / 'a.py').resolve()}:1:def foo():" in out
 
 
 def test_grep_no_hit(ws):
@@ -130,7 +132,7 @@ def test_grep_skips_git_dir(ws):
 def test_glob_match(ws):
     (ws / "a.py").write_text("", encoding="utf-8")
     (ws / "b.txt").write_text("", encoding="utf-8")
-    assert glob(GlobArgs(pattern="*.py")) == "a.py"
+    assert glob(GlobArgs(pattern="*.py")) == str((ws / "a.py").resolve())
 
 
 def test_glob_no_match(ws):

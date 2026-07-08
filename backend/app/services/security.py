@@ -18,30 +18,56 @@ class SecurityError(Exception):
     """安全拦截(越界 / 未配置工作区)。被工具执行层捕获成 tool 结果喂回模型,不崩流。"""
 
 
-def get_workspace() -> Path:
-    """读配置里的 workspace_dir;为空则报错引导(绝不默认任何目录乱翻)。"""
-    ws = config_store.get()["security"]["workspace_dir"]
-    if not ws:
-        raise SecurityError("未配置工作区目录,请先在设置页指定 workspace_dir")
-    return Path(ws).resolve()
+def get_default_cwd() -> Path:
+    """默认工作目录 = run_command 默认 cwd + 相对路径基准。不存在则自动创建(~/.superstar 首次)。
+
+    default_cwd 为空时退一步取 allowed_dirs[0];仍为空则报错引导去设置页(绝不默认乱翻)。
+    """
+    sec = config_store.get()["security"]
+    raw = sec.get("default_cwd") or ""
+    if not raw:
+        roots = sec.get("allowed_dirs") or []
+        raw = roots[0] if roots else ""
+    if not raw:
+        raise SecurityError("未配置工作目录,请先在设置页指定默认工作目录")
+    p = Path(raw).expanduser().resolve()
+    p.mkdir(parents=True, exist_ok=True)
+    return p
 
 
-def safe_path(rel: str) -> Path:
-    """把工具传来的路径钉进 workspace 根内;越界抛 SecurityError。
+def get_allowed_roots() -> list[Path]:
+    """所有可访问根 = default_cwd + allowed_dirs(各 expanduser+resolve,去空去重)。全空则报错。"""
+    sec = config_store.get()["security"]
+    raw = [sec.get("default_cwd") or "", *(sec.get("allowed_dirs") or [])]
+    roots: list[Path] = []
+    for r in raw:
+        if not r:
+            continue
+        p = Path(r).expanduser().resolve()
+        if p not in roots:
+            roots.append(p)
+    if not roots:
+        raise SecurityError("未配置任何可访问目录,请先在设置页指定")
+    return roots
 
-    (root / rel) 再 resolve():
-      - rel 相对路径 → 拼在 root 下
-      - rel 绝对路径(如 /etc/passwd)→ Path 语义下 root / "/etc/passwd" == "/etc/passwd",
-        resolve 后不在 root 内 → 拒
+
+def safe_path(path: str) -> Path:
+    """把工具传来的路径钉进任一允许根内;都不命中抛 SecurityError。
+
+    对每个 root 计算 (root / path).resolve():
+      - path 相对路径 → 拼在 root 下
+      - path 绝对路径(如 /etc/passwd)→ Path 语义下 root / "/etc/passwd" == "/etc/passwd",
+        resolve 后不在任何 root 内 → 拒
       - ../ 和软链接都被 resolve 解开成真实路径再判断
     用 `root in target.parents` 判祖先(比 startswith 稳,避开 /home/user-evil 冒充 /home/user)。
+    命中任一根即返回;遍历完都不命中才拒。
     """
-    root = get_workspace()
-    target = (root / rel).resolve()
-    if target != root and root not in target.parents:
-        logger.warning("路径越界拦截: rel=%s", rel)
-        raise SecurityError(f"路径越界,超出工作区: {rel}")
-    return target
+    for root in get_allowed_roots():
+        target = (root / path).resolve()
+        if target == root or root in target.parents:
+            return target
+    logger.warning("路径越界拦截: path=%s", path)
+    raise SecurityError(f"路径越界,超出允许目录: {path}")
 
 
 # ---- P2b: 命令分级(白/黑/灰),拆段判级防拼接绕过 ----

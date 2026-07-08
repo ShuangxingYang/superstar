@@ -12,7 +12,7 @@ def ws(tmp_path, monkeypatch):
     config_store._reset_cache()
     proj = tmp_path / "proj"
     proj.mkdir()
-    config_store.update({"security": {"workspace_dir": str(proj)}})
+    config_store.update({"security": {"default_cwd": str(proj), "allowed_dirs": []}})
     return proj
 
 
