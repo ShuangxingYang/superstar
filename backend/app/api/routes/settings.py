@@ -50,11 +50,19 @@ def test_connection(req: schemas.TestConnectionRequest) -> schemas.TestConnectio
         if req.kind == "embedding":
             client.embeddings.create(model=req.model, input="ping")
         else:
-            client.chat.completions.create(
+            # 用流式探活,与对话循环(loop.py)一致:部分网关(如 tokenhub codex/v1)
+            # 只接受 stream=True,非流式会被 400「Stream must be set to true」拒。
+            stream = client.chat.completions.create(
                 model=req.model,
                 messages=[{"role": "user", "content": "ping"}],
                 max_tokens=1,
+                stream=True,
             )
+            try:
+                for _ in stream:      # 消费一个分片即证明连通
+                    break
+            finally:
+                getattr(stream, "close", lambda: None)()   # 尽早关闭流
         return schemas.TestConnectionResult(ok=True)
     except Exception as e:  # noqa: BLE001 - 错误信息透传给前端展示
         logger.warning("测试连接失败(%s): %s", req.kind, type(e).__name__)  # 不打印 key

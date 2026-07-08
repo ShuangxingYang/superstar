@@ -60,3 +60,28 @@ def test_embedding_test_connection(client, monkeypatch):
         "base_url": "u", "api_key": "sk-x", "model": "text-embedding-v3", "kind": "embedding"})
     assert r.json()["ok"] is True
     assert "embedding" in calls and "chat" not in calls   # 只调了 embeddings
+
+
+def test_llm_test_connection_uses_stream(client, monkeypatch):
+    # 有些网关(如 tokenhub codex/v1)只接受流式请求;LLM 测连接必须带 stream=True,
+    # 与对话循环一致。这里断言透传了 stream=True,且能消费流式返回。
+    import app.api.routes.settings as s
+    calls = {}
+
+    class FakeCompletions:
+        def create(self, **kw):
+            calls.update(kw)
+            return iter([object()])            # 可迭代,模拟流式分片
+
+    class FakeChat:
+        completions = FakeCompletions()
+
+    class FakeClient:
+        def __init__(self, **kw):
+            self.chat = FakeChat()
+
+    monkeypatch.setattr(s, "OpenAI", FakeClient)
+    r = client.post("/api/settings/test", json={
+        "base_url": "u", "api_key": "sk-x", "model": "gpt-5.4", "kind": "llm"})
+    assert r.json()["ok"] is True
+    assert calls.get("stream") is True
