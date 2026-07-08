@@ -43,15 +43,19 @@ def update_settings(update: schemas.ConfigUpdate) -> schemas.AppConfig:
 
 @router.post("/test", response_model=schemas.TestConnectionResult)
 def test_connection(req: schemas.TestConnectionRequest) -> schemas.TestConnectionResult:
-    """临时建客户端发 1 token 请求,验证 base_url/key/model 是否可用。"""
+    """临时建客户端发一次最小请求,验证 base_url/key/model 是否可用。按 kind 分流:
+    llm 走 chat.completions;embedding 走 embeddings(两种服务的探活接口不同)。"""
     try:
         client = OpenAI(api_key=req.api_key, base_url=req.base_url or None, timeout=20)
-        client.chat.completions.create(
-            model=req.model,
-            messages=[{"role": "user", "content": "ping"}],
-            max_tokens=1,
-        )
+        if req.kind == "embedding":
+            client.embeddings.create(model=req.model, input="ping")
+        else:
+            client.chat.completions.create(
+                model=req.model,
+                messages=[{"role": "user", "content": "ping"}],
+                max_tokens=1,
+            )
         return schemas.TestConnectionResult(ok=True)
     except Exception as e:  # noqa: BLE001 - 错误信息透传给前端展示
-        logger.warning("测试连接失败: %s", type(e).__name__)  # 不打印 key
+        logger.warning("测试连接失败(%s): %s", req.kind, type(e).__name__)  # 不打印 key
         return schemas.TestConnectionResult(ok=False, error=str(e))

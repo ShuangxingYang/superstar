@@ -11,13 +11,34 @@ def test_to_masked_config_hides_keys():
     cfg = {
         "llm": {"base_url": "u", "api_key": "sk-abcdef123456", "model": "m"},
         "embedding": {"base_url": "u2", "api_key": "sk-zzzz9999", "model": "e"},
-        "security": {"workspace_dir": "", "kb_dir": "", "cmd_whitelist": [], "cmd_blacklist": []},
+        "security": {"default_cwd": "", "allowed_dirs": [], "kb_dir": "",
+                     "cmd_whitelist": [], "cmd_blacklist": []},
         "agent": {"max_iters": 10, "temperature": 0.7},
     }
     out = schemas.to_masked_config(cfg)
     assert out.llm.api_key == "sk-***3456"
     assert out.embedding.api_key == "sk-***9999"
     assert out.llm.model == "m"          # 非 key 字段原样
+
+
+def test_security_settings_roundtrip():
+    cfg = schemas.to_masked_config({
+        "llm": {"base_url": "u", "api_key": "sk-abcdef123456", "model": "m"},
+        "embedding": {"base_url": "u2", "api_key": "sk-zzzz9999", "model": "e"},
+        "security": {"default_cwd": "~/.superstar", "allowed_dirs": ["/tmp"],
+                     "kb_dir": "", "cmd_whitelist": [], "cmd_blacklist": []},
+        "agent": {"max_iters": 10, "temperature": 0.7},
+        "rag": {"chunk_size": 500, "overlap": 80, "top_n": 20, "top_k": 5, "rerank_model": "gte-rerank"},
+    })
+    assert cfg.security.default_cwd == "~/.superstar"
+    assert cfg.security.allowed_dirs == ["/tmp"]
+
+
+def test_test_connection_request_kind_default():
+    # kind 默认 llm;可显式指定 embedding
+    assert schemas.TestConnectionRequest(base_url="u", api_key="k", model="m").kind == "llm"
+    r = schemas.TestConnectionRequest(base_url="u", api_key="k", model="m", kind="embedding")
+    assert r.kind == "embedding"
 
 
 def test_config_update_all_optional():

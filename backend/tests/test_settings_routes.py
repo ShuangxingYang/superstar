@@ -32,3 +32,31 @@ def test_put_ignores_masked_key(client):
     config_store.update({"llm": {"api_key": "sk-realkey9999"}})
     client.put("/api/settings", json={"llm": {"api_key": "sk-***9999"}})
     assert config_store.get()["llm"]["api_key"] == "sk-realkey9999"
+
+
+def test_embedding_test_connection(client, monkeypatch):
+    # kind='embedding' 应走 embeddings 接口(而非 chat.completions)
+    import app.api.routes.settings as s
+    calls = {}
+
+    class FakeEmb:
+        def create(self, **kw):
+            calls["embedding"] = kw
+            return object()
+
+    class FakeChat:
+        class completions:
+            @staticmethod
+            def create(**kw):
+                calls["chat"] = kw
+
+    class FakeClient:
+        def __init__(self, **kw):
+            self.embeddings = FakeEmb()
+            self.chat = FakeChat()
+
+    monkeypatch.setattr(s, "OpenAI", FakeClient)
+    r = client.post("/api/settings/test", json={
+        "base_url": "u", "api_key": "sk-x", "model": "text-embedding-v3", "kind": "embedding"})
+    assert r.json()["ok"] is True
+    assert "embedding" in calls and "chat" not in calls   # 只调了 embeddings

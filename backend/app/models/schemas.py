@@ -27,7 +27,8 @@ class EmbeddingSettings(BaseModel):
 
 
 class SecuritySettings(BaseModel):
-    workspace_dir: str = ""
+    default_cwd: str = ""
+    allowed_dirs: list[str] = []
     kb_dir: str = ""
     cmd_whitelist: list[str] = []
     cmd_blacklist: list[str] = []
@@ -59,7 +60,8 @@ class EmbeddingUpdate(BaseModel):
 
 
 class SecurityUpdate(BaseModel):
-    workspace_dir: str | None = None
+    default_cwd: str | None = None
+    allowed_dirs: list[str] | None = None
     kb_dir: str | None = None
     cmd_whitelist: list[str] | None = None
     cmd_blacklist: list[str] | None = None
@@ -82,6 +84,7 @@ class TestConnectionRequest(BaseModel):
     base_url: str
     api_key: str
     model: str
+    kind: Literal["llm", "embedding"] = "llm"   # 区分测哪种服务;前端按分区传
 
 
 class TestConnectionResult(BaseModel):
