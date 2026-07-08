@@ -29,6 +29,16 @@ def test_gate_write_approve_with_diff(ws):
     assert "old" in preview["diff"] and "new" in preview["diff"]
 
 
+def test_gate_diff_splits_lines_without_trailing_newline(ws):
+    # 旧内容无结尾换行(如 "hello"),diff 不能把 -hello 和 +world 挤成一行 -hello+world;
+    # 前端按 \n 切行着色,必须保证每个 +/- 行独占一行。
+    (ws / "b.txt").write_text("hello", encoding="utf-8")   # 注意:无结尾 \n
+    _, preview = gate_tool_call("write_file", {"path": "b.txt", "content": "world"})
+    lines = preview["diff"].split("\n")
+    assert any(ln.startswith("-hello") and "+world" not in ln for ln in lines)  # -hello 独占一行
+    assert any(ln.startswith("+world") for ln in lines)                          # +world 独占一行
+
+
 def test_gate_write_escape_deny(ws):
     assert gate_tool_call("write_file", {"path": "../../tmp/x", "content": "z"}) == ("deny", None)
 

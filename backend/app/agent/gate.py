@@ -25,9 +25,13 @@ def gate_tool_call(name: str, args: dict) -> tuple[str, dict | None]:
             logger.info("gate: write_file 越界/缺参 → deny")
             return "deny", None
         old = target.read_text(encoding="utf-8", errors="replace") if target.is_file() else ""
+        new = args.get("content") or ""
+        # 按行切并保证每行以 \n 结尾:否则无结尾换行的内容(如 "hello")会让 difflib 把
+        # -hello 和 +world 拼成一行 "-hello+world",前端按 \n 着色就切不开。
+        old_lines = [ln if ln.endswith("\n") else ln + "\n" for ln in old.splitlines()]
+        new_lines = [ln if ln.endswith("\n") else ln + "\n" for ln in new.splitlines()]
         diff = "".join(difflib.unified_diff(
-            old.splitlines(keepends=True),
-            (args.get("content") or "").splitlines(keepends=True),
+            old_lines, new_lines,
             fromfile=f"{args['path']} (原)", tofile=f"{args['path']} (新)"))
         return "approve", {"kind": "write", "path": args["path"], "diff": diff or "(无变化)"}
 
