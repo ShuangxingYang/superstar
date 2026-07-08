@@ -48,7 +48,9 @@ export default function ToolCallCard({ name, args, result, approval, onDecision 
   const summary = pending
     ? approval.preview.kind === 'write'
       ? `待批准:写 ${approval.preview.path}`
-      : `待批准:运行 ${approval.preview.command}`
+      : approval.preview.kind === 'command'
+        ? `待批准:运行 ${approval.preview.command}`
+        : `待批准:加入工作区 ${approval.preview.path}`
     : running
       ? '运行中…'
       : (result ?? '').split('\n')[0] || '(空)'
@@ -112,6 +114,16 @@ export default function ToolCallCard({ name, args, result, approval, onDecision 
               </div>
               <pre className="overflow-x-auto rounded-[10px] bg-background px-3 py-2.5 font-mono text-xs">
                 {approval.preview.command}
+              </pre>
+            </>
+          )}
+          {pending && approval.preview.kind === 'add_workspace' && (
+            <>
+              <div className="mb-1.5 font-mono text-[10.5px] uppercase tracking-wide text-muted-foreground">
+                将把以下目录加入可访问白名单
+              </div>
+              <pre className="overflow-x-auto rounded-[10px] bg-background px-3 py-2.5 font-mono text-xs">
+                {approval.preview.path}
               </pre>
             </>
           )}
