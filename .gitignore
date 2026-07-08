@@ -7,7 +7,8 @@ venv/
 .pytest_cache/
 .mypy_cache/
 
-# 环境变量与密钥(绝不提交)
+# 环境变量与密钥(绝不提交)。业务密钥在 data/config.json,已被下方 data/ 忽略。
+# 模板 config.example.json / .env.example 是安全的,照常入库。
 .env
 .env.local
 *.key
@@ -27,3 +28,6 @@ data/
 .DS_Store
 .idea/
 .vscode/
+
+# superpowers 脚手架临时目录(进度台账等,非项目产物)
+.superpowers/

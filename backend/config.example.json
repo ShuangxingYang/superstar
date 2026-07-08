@@ -1,0 +1,31 @@
+{
+  "_comment": "复制本文件为 data/config.json 后填入你的密钥。真实 data/config.json 已被 .gitignore 忽略,绝不入库。api_key/model 也可留空,启动后到前端「设置页」填写并热生效。",
+  "llm": {
+    "base_url": "https://your-llm-endpoint/v1",
+    "api_key": "",
+    "model": ""
+  },
+  "embedding": {
+    "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    "api_key": "",
+    "model": "text-embedding-v3",
+    "dimension": 1024
+  },
+  "security": {
+    "workspace_dir": "",
+    "kb_dir": "",
+    "cmd_whitelist": ["grep", "ls", "cat", "git status", "find", "wc"],
+    "cmd_blacklist": ["rm -rf", "sudo", "curl", "wget", "mkfs", "dd"]
+  },
+  "agent": {
+    "max_iters": 10,
+    "temperature": 0.7
+  },
+  "rag": {
+    "chunk_size": 500,
+    "overlap": 80,
+    "top_n": 20,
+    "top_k": 5,
+    "rerank_model": "gte-rerank"
+  }
+}
