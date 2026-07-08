@@ -88,7 +88,8 @@ export default function SessionList({
               <li
                 key={s.id}
                 className={cn(
-                  'group flex items-center gap-2 rounded-xl px-3 py-2.5 text-sm cursor-pointer transition-all',
+                  // 固定 min-h,让行高不随 hover 出现的操作按钮/active 圆点变化(否则会抖)
+                  'group flex min-h-9 items-center gap-2 rounded-xl px-3 text-sm cursor-pointer transition-[background,box-shadow,color]',
                   active
                     ? 'shadow-soft-md bg-card font-medium text-foreground'
                     : 'text-muted-foreground hover:shadow-soft-sm hover:bg-card hover:text-foreground',

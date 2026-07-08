@@ -5,8 +5,25 @@ export default {
   theme: {
     extend: {
       fontFamily: {
-        sans: ["Geist", "system-ui", "sans-serif"],
-        mono: ["JetBrains Mono", "ui-monospace", "monospace"],
+        // 系统字体栈:零外网依赖。Mac 上 sans=SF Pro、mono=SF Mono,本身就是顶级字体
+        sans: [
+          "system-ui",
+          "-apple-system",
+          "BlinkMacSystemFont",
+          "Segoe UI",
+          "Helvetica Neue",
+          "Arial",
+          "sans-serif",
+        ],
+        mono: [
+          "ui-monospace",
+          "SFMono-Regular",
+          "SF Mono",
+          "Menlo",
+          "Consolas",
+          "Liberation Mono",
+          "monospace",
+        ],
       },
       colors: {
         border: "hsl(var(--border))",
