@@ -5,6 +5,8 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 
+import { getSettings } from './lib/api'
+
 import ContextPanel from './components/ContextPanel'
 import KbManager from './components/KbManager'
 import SessionList from './components/SessionList'
@@ -29,7 +31,15 @@ export default function App() {
   } = useChatStream()
   const [input, setInput] = useState('')
   const [view, setView] = useState<'chat' | 'kb' | 'settings'>('chat') // 右侧主区:聊天 / 知识库 / 设置
+  const [needSetup, setNeedSetup] = useState(false) // 首启未配 LLM → 空态引导进设置页
   const locked = streaming || hasPending // 流式中 or 有待审批 → 锁输入
+
+  // 挂载时探一次 LLM 配置:api_key/model 任一为空(脱敏后仍为空串)→ 还没配
+  useEffect(() => {
+    getSettings()
+      .then((c) => setNeedSetup(!c.llm.api_key || !c.llm.model))
+      .catch(() => {})
+  }, [])
 
   // 消息流自动跟随:仅当用户本来就贴在底部时,新消息才自动滚到底;
   // 用户往上翻看历史时不硬拽回去(atBottom 在每次滚动时更新)。
@@ -104,6 +114,14 @@ export default function App() {
                     <div className="mt-3 text-sm text-muted-foreground">
                       本地干活型 Agent,问点什么开始吧。
                     </div>
+                    {needSetup && (
+                      <button
+                        onClick={() => setView('settings')}
+                        className="shadow-soft-md hover:shadow-soft-lg mt-6 inline-flex items-center gap-2 rounded-full bg-card px-5 py-2.5 text-sm font-semibold text-primary transition-shadow"
+                      >
+                        还没配模型,点这里去设置 →
+                      </button>
+                    )}
                   </div>
                 )}
                 {messages.map((it, i) =>
