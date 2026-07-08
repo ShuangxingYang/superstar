@@ -8,10 +8,11 @@ export type ChatEvent =
   | { type: 'done' }
   | { type: 'error'; message: string }
 
-// 待审批操作的预览:写文件带 diff,跑命令带命令串
+// 待审批操作的预览:写文件带 diff,跑命令带命令串,加工作区带绝对路径
 export type ApprovalPreview =
   | { kind: 'write'; path: string; diff: string }
   | { kind: 'command'; command: string; level: string }
+  | { kind: 'add_workspace'; path: string }
 
 // 会话里未决的审批(GET /api/sessions/{sid} 回传;刷新后还原待审批卡)
 export type PendingState = {
@@ -150,5 +151,54 @@ export async function rebuildKb(): Promise<{ documents: number; chunks: number }
 export async function kbStats(): Promise<KbStats> {
   const r = await fetch('/api/kb/stats')
   if (!r.ok) throw new Error('拉取状态失败')
+  return r.json()
+}
+
+// ---- 设置(P4;api_key 为脱敏值,回传不改则后端丢弃) ----
+export type AppConfig = {
+  llm: { base_url: string; api_key: string; model: string }
+  embedding: { base_url: string; api_key: string; model: string }
+  security: {
+    default_cwd: string
+    allowed_dirs: string[]
+    kb_dir: string
+    cmd_whitelist: string[]
+    cmd_blacklist: string[]
+  }
+  agent: { max_iters: number; temperature: number }
+}
+
+export type ConfigUpdate = {
+  llm?: Partial<AppConfig['llm']>
+  embedding?: Partial<AppConfig['embedding']>
+  security?: Partial<AppConfig['security']>
+  agent?: Partial<AppConfig['agent']>
+}
+
+export async function getSettings(): Promise<AppConfig> {
+  const r = await fetch('/api/settings')
+  if (!r.ok) throw new Error('拉取设置失败')
+  return r.json()
+}
+
+export async function updateSettings(partial: ConfigUpdate): Promise<AppConfig> {
+  const r = await fetch('/api/settings', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(partial),
+  })
+  if (!r.ok) throw new Error('保存设置失败')
+  return r.json()
+}
+
+export async function testConnection(
+  kind: 'llm' | 'embedding',
+  body: { base_url: string; api_key: string; model: string },
+): Promise<{ ok: boolean; error: string }> {
+  const r = await fetch('/api/settings/test', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...body, kind }),
+  })
   return r.json()
 }
