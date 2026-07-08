@@ -1,4 +1,4 @@
-import { Loader2, Plug, Plus, Save, Trash2 } from 'lucide-react'
+import { Eye, EyeOff, Loader2, Plug, Plus, Save, Trash2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
@@ -170,18 +170,30 @@ function ModelCard({
   onField: (key: string, val: string) => void
   onTest: () => void
 }) {
+  const [showKey, setShowKey] = useState(false) // 默认密文,点眼睛看明文
   return (
     <Card title={title}>
       <Row label="Base URL">
         <Input value={conn.base_url} onChange={(e) => onField('base_url', e.target.value)} />
       </Row>
       <Row label="API Key">
-        <Input
-          type="password"
-          value={conn.api_key}
-          placeholder="sk-..."
-          onChange={(e) => onField('api_key', e.target.value)}
-        />
+        <div className="relative">
+          <Input
+            type={showKey ? 'text' : 'password'}
+            className="pr-10"
+            value={conn.api_key}
+            placeholder="sk-..."
+            onChange={(e) => onField('api_key', e.target.value)}
+          />
+          <button
+            type="button"
+            title={showKey ? '隐藏' : '显示'}
+            onClick={() => setShowKey((v) => !v)}
+            className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1 text-muted-foreground transition-colors hover:text-foreground"
+          >
+            {showKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+          </button>
+        </div>
       </Row>
       <Row label="模型名">
         <Input value={conn.model} onChange={(e) => onField('model', e.target.value)} />

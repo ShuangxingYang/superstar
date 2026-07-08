@@ -19,7 +19,8 @@ router = APIRouter(prefix="/api/settings", tags=["settings"])
 
 
 def _drop_masked_keys(partial: dict) -> dict:
-    """前端可能把脱敏后的 key(含 ***)原样回传;含 *** 视为未改,丢弃,避免用掩码覆盖真 key。"""
+    """防御性保护:若某处传回含 *** 的脱敏 key,视为未改,丢弃,避免用掩码覆盖真 key。
+    (现在 GET 回明文、前端正常回传真 key;此保护仍保留,以防前端某路径传了脱敏值。)"""
     for section in ("llm", "embedding"):
         sec = partial.get(section)
         if isinstance(sec, dict) and isinstance(sec.get("api_key"), str) and "***" in sec["api_key"]:
@@ -29,7 +30,7 @@ def _drop_masked_keys(partial: dict) -> dict:
 
 @router.get("", response_model=schemas.AppConfig)
 def get_settings() -> schemas.AppConfig:
-    return schemas.to_masked_config(config_store.get())
+    return schemas.to_config_response(config_store.get())
 
 
 @router.put("", response_model=schemas.AppConfig)
@@ -38,7 +39,7 @@ def update_settings(update: schemas.ConfigUpdate) -> schemas.AppConfig:
     partial = _drop_masked_keys(partial)
     merged = config_store.update(partial)
     logger.info("配置已更新: sections=%s", list(partial.keys()))  # 只记分组名
-    return schemas.to_masked_config(merged)
+    return schemas.to_config_response(merged)
 
 
 @router.post("/test", response_model=schemas.TestConnectionResult)

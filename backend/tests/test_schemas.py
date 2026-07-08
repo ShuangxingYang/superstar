@@ -2,12 +2,14 @@ from app.models import schemas
 
 
 def test_mask_key():
+    # mask_key 仍保留:_drop_masked_keys 靠 *** 识别"未改动的 key",别处也可能复用
     assert schemas.mask_key("") == ""
     assert schemas.mask_key("ab") == "****"
     assert schemas.mask_key("sk-abcdef123456") == "sk-***3456"
 
 
-def test_to_masked_config_hides_keys():
+def test_to_config_response_returns_plaintext():
+    # 本地自用工具:GET 直接回明文 key(前端默认密文、可点眼睛看),不再脱敏
     cfg = {
         "llm": {"base_url": "u", "api_key": "sk-abcdef123456", "model": "m"},
         "embedding": {"base_url": "u2", "api_key": "sk-zzzz9999", "model": "e"},
@@ -15,14 +17,14 @@ def test_to_masked_config_hides_keys():
                      "cmd_whitelist": [], "cmd_blacklist": []},
         "agent": {"max_iters": 10, "temperature": 0.7},
     }
-    out = schemas.to_masked_config(cfg)
-    assert out.llm.api_key == "sk-***3456"
-    assert out.embedding.api_key == "sk-***9999"
-    assert out.llm.model == "m"          # 非 key 字段原样
+    out = schemas.to_config_response(cfg)
+    assert out.llm.api_key == "sk-abcdef123456"      # 明文原样
+    assert out.embedding.api_key == "sk-zzzz9999"
+    assert out.llm.model == "m"
 
 
 def test_security_settings_roundtrip():
-    cfg = schemas.to_masked_config({
+    cfg = schemas.to_config_response({
         "llm": {"base_url": "u", "api_key": "sk-abcdef123456", "model": "m"},
         "embedding": {"base_url": "u2", "api_key": "sk-zzzz9999", "model": "e"},
         "security": {"default_cwd": "~/.superstar", "allowed_dirs": ["/tmp"],

@@ -14,11 +14,12 @@ def client(tmp_path, monkeypatch):
     config_store._reset_cache()
 
 
-def test_get_settings_masks_key(client):
+def test_get_settings_returns_plaintext_key(client):
+    # 本地自用:GET 回明文 key(前端默认密文、点眼睛看明文)
     config_store.update({"llm": {"api_key": "sk-abcdef123456"}})
     r = client.get("/api/settings")
     assert r.status_code == 200
-    assert r.json()["llm"]["api_key"] == "sk-***3456"
+    assert r.json()["llm"]["api_key"] == "sk-abcdef123456"
 
 
 def test_put_settings_updates(client):

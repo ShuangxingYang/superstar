@@ -117,7 +117,7 @@ class ResumeRequest(BaseModel):
     decision: Literal["approve", "reject"]
 
 
-# ---- key 脱敏 ----
+# ---- key 脱敏(mask_key 仍保留:_drop_masked_keys 靠 *** 识别未改动的 key) ----
 def mask_key(key: str) -> str:
     """只保留末 4 位:sk-abcdef123456 -> sk-***3456;空串→空串;过短(≤4)→ ****。"""
     if not key:
@@ -127,9 +127,10 @@ def mask_key(key: str) -> str:
     return f"{key[:3]}***{key[-4:]}"
 
 
-def to_masked_config(config: dict) -> AppConfig:
-    """内部 dict → 响应模型,并对两个 api_key 脱敏。"""
-    masked = deepcopy(config)
-    masked["llm"]["api_key"] = mask_key(config["llm"].get("api_key", ""))
-    masked["embedding"]["api_key"] = mask_key(config["embedding"].get("api_key", ""))
-    return AppConfig(**masked)
+def to_config_response(config: dict) -> AppConfig:
+    """内部 dict → 响应模型。
+
+    本地、单用户、自用工具:api_key 直接**明文**回传(前端默认密文展示,可点眼睛看明文,
+    连通测试也能直接用真 key)。key 本就明文躺在本机 data/config.json 里,不额外增加泄露面。
+    """
+    return AppConfig(**deepcopy(config))
