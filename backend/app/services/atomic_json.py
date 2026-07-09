@@ -28,3 +28,16 @@ def write_json_atomic(path: Path, data: Any) -> None:
     except Exception:
         tmp.unlink(missing_ok=True)
         raise
+
+
+def write_text_atomic(path: Path, text: str) -> None:
+    """原子写纯文本(markdown 等):tmp 写 + os.replace,读者永不见写一半的文件。
+    与 write_json_atomic 同构,只是不做 json.dumps。"""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(path.name + ".tmp")
+    try:
+        tmp.write_text(text, encoding="utf-8")
+        os.replace(tmp, path)
+    except Exception:
+        tmp.unlink(missing_ok=True)
+        raise

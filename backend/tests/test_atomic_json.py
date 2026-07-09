@@ -30,3 +30,28 @@ def test_write_crash_keeps_old_file(tmp_path, monkeypatch):
         atomic_json.write_json_atomic(p, {"v": "bad"})
     assert json.loads(p.read_text(encoding="utf-8"))["v"] == "good"  # 旧文件完好
     assert not (tmp_path / "x.json.tmp").exists()                    # 无脏 tmp
+
+
+def test_write_text_roundtrip(tmp_path):
+    p = tmp_path / "note.md"
+    atomic_json.write_text_atomic(p, "# hello\n世界\n")
+    assert p.read_text(encoding="utf-8") == "# hello\n世界\n"
+    atomic_json.write_text_atomic(p, "覆盖后的新内容")     # 整份覆盖
+    assert p.read_text(encoding="utf-8") == "覆盖后的新内容"
+    assert not (tmp_path / "note.md.tmp").exists()          # 无脏 tmp
+
+
+def test_write_text_crash_keeps_old_file(tmp_path, monkeypatch):
+    p = tmp_path / "note.md"
+    atomic_json.write_text_atomic(p, "good")
+    real = Path.write_text
+
+    def half_then_boom(self, data, *a, **k):
+        real(self, data[: len(data) // 2], *a, **k)
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(Path, "write_text", half_then_boom)
+    with pytest.raises(RuntimeError):
+        atomic_json.write_text_atomic(p, "bad")
+    assert p.read_text(encoding="utf-8") == "good"          # 旧文件完好
+    assert not (tmp_path / "note.md.tmp").exists()          # 无脏 tmp
