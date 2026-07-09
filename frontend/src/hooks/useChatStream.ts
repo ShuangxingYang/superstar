@@ -16,7 +16,7 @@ import {
 
 // 消息流的一项:要么一条文本消息,要么一张工具卡片(可含审批子状态)
 export type ChatItem =
-  | { kind: 'msg'; role: 'user' | 'assistant'; content: string }
+  | { kind: 'msg'; role: 'user' | 'assistant'; content: string; reasoning?: string }
   | {
       kind: 'tool'
       id: string
@@ -35,7 +35,10 @@ function messagesToItems(msgs: StoredMessage[], pending: PendingState): ChatItem
     if (m.role === 'user') {
       items.push({ kind: 'msg', role: 'user', content: m.content ?? '' })
     } else if (m.role === 'assistant') {
-      if (m.content) items.push({ kind: 'msg', role: 'assistant', content: m.content })
+      // 有正文或有思考过程,就还原一条 assistant 气泡(思考挂在 reasoning 上,刷新可回看)
+      if (m.content || m.reasoning) {
+        items.push({ kind: 'msg', role: 'assistant', content: m.content ?? '', reasoning: m.reasoning })
+      }
       for (const tc of m.tool_calls ?? []) {
         toolIndex[tc.id] = items.length
         items.push({ kind: 'tool', id: tc.id, name: tc.function.name, args: tc.function.arguments })
@@ -121,6 +124,19 @@ export function useChatStream() {
       setMessages((m) =>
         m.map((it) => (it.kind === 'tool' && it.id === e.id ? { ...it, result: e.result } : it)),
       )
+    } else if (e.type === 'reasoning') {
+      // 思考分片:并到当前 assistant 气泡的 reasoning 字段。它先于正文到,
+      // 若还没有 assistant 气泡就新起一条(content 先留空,正文来了再填)。
+      setMessages((m) => {
+        const next = [...m]
+        const last = next[next.length - 1]
+        if (last && last.kind === 'msg' && last.role === 'assistant') {
+          next[next.length - 1] = { ...last, reasoning: (last.reasoning ?? '') + e.content }
+        } else {
+          next.push({ kind: 'msg', role: 'assistant', content: '', reasoning: e.content })
+        }
+        return next
+      })
     } else if (e.type === 'text') {
       // 追加到「最后一条 assistant 文本」;若上一项是工具卡片/用户消息,则新起一条
       setMessages((m) => {

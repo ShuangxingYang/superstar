@@ -1,4 +1,4 @@
-import { Eye, EyeOff, Loader2, Plug, Plus, Save, Trash2 } from 'lucide-react'
+import { Check, Eye, EyeOff, Loader2, Plug, Plus, Save, Star, Trash2, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 
 import { getSettings, testConnection, updateSettings } from '../lib/api'
-import type { AppConfig } from '../lib/api'
+import type { AppConfig, LLMProfile } from '../lib/api'
 
 type TestState = { status: 'idle' | 'testing' | 'ok' | 'fail'; msg: string }
 const IDLE: TestState = { status: 'idle', msg: '' }
@@ -52,12 +52,49 @@ export default function SettingsPanel() {
     }))
   }
 
+  // ---- 配置预设:切换/另存/删除都「立即落盘生效」,无需再点保存 ----
+  // 落盘同时更新本地 cfg,并回填服务端返回(保持与磁盘一致)。
+  const persist = async (next: AppConfig) => {
+    setCfg(next)                       // 乐观更新,点击即时反馈
+    const saved = await updateSettings(next)
+    setCfg(saved)
+  }
+
+  // 点预设胶囊 → 把它的连接要素(含 reasoning_effort)写进生效的 llm,立即生效
+  // 解构剥掉 name,剩下的正好是 llm 的形状;以后 llm 加字段这里也不用改
+  const applyProfile = (p: LLMProfile) => {
+    const { name: _name, ...conn } = p
+    persist({ ...cfg, llm: conn })
+  }
+
+  // 另存当前 llm 表单为一个新预设(名字用 prompt 取,本地自用够简单)
+  const saveCurrentAsProfile = () => {
+    const name = window.prompt('给这套配置起个名字', cfg.llm.model || '未命名')?.trim()
+    if (!name) return
+    const profile: LLMProfile = { name, ...cfg.llm }
+    // 同名则覆盖,否则追加
+    const rest = cfg.llm_profiles.filter((p) => p.name !== name)
+    persist({ ...cfg, llm_profiles: [...rest, profile] })
+  }
+
+  const deleteProfile = (name: string) =>
+    persist({ ...cfg, llm_profiles: cfg.llm_profiles.filter((p) => p.name !== name) })
+
   return (
     <div className="mx-auto w-full max-w-2xl px-8 py-8">
       <div className="mb-6 flex items-end gap-3">
         <h2 className="text-2xl font-bold tracking-tight">设置</h2>
         <div className="mb-1 text-sm text-muted-foreground">改完点底部保存,热生效</div>
       </div>
+
+      {/* 配置预设:多套 LLM 配置一键切换 */}
+      <ProfileBar
+        profiles={cfg.llm_profiles}
+        current={cfg.llm}
+        onApply={applyProfile}
+        onSaveCurrent={saveCurrentAsProfile}
+        onDelete={deleteProfile}
+      />
 
       {/* 模型(LLM) */}
       <ModelCard
@@ -66,6 +103,7 @@ export default function SettingsPanel() {
         test={test.llm}
         onField={(k, v) => patch('llm', k, v)}
         onTest={() => onTest('llm')}
+        showReasoning
       />
 
       {/* 向量模型(Embedding) */}
@@ -156,6 +194,85 @@ export default function SettingsPanel() {
   )
 }
 
+// ---- 配置预设条:胶囊列表 + 另存当前。点胶囊即时切换,当前生效的高亮 ----
+function ProfileBar({
+  profiles,
+  current,
+  onApply,
+  onSaveCurrent,
+  onDelete,
+}: {
+  profiles: LLMProfile[]
+  current: { base_url: string; api_key: string; model: string }
+  onApply: (p: LLMProfile) => void
+  onSaveCurrent: () => void
+  onDelete: (name: string) => void
+}) {
+  // 当前生效判定:三要素与生效的 llm 全等即为"正在用"(不额外存索引)
+  const isActive = (p: LLMProfile) =>
+    p.base_url === current.base_url && p.api_key === current.api_key && p.model === current.model
+
+  return (
+    <div className="shadow-soft-md mb-4 rounded-2xl bg-card p-6">
+      <div className="mb-3 flex items-center gap-2 text-[15px] font-semibold">
+        <Star className="h-4 w-4 text-primary" />
+        配置预设
+        <span className="text-xs font-normal text-muted-foreground">点一下即切换,无需保存</span>
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        {profiles.length === 0 && (
+          <span className="text-xs text-muted-foreground">
+            还没有预设。填好下方配置后点「另存当前」存成一套,之后就能一键切换。
+          </span>
+        )}
+        {profiles.map((p) => {
+          const active = isActive(p)
+          return (
+            <div
+              key={p.name}
+              className={cn(
+                'shadow-soft-sm group inline-flex items-center gap-1.5 rounded-full py-1.5 pl-3 pr-1.5 text-[13px] transition-all',
+                active
+                  ? 'grad-brand font-semibold text-white'
+                  : 'bg-secondary/70 hover:bg-secondary text-foreground',
+              )}
+            >
+              <button
+                type="button"
+                onClick={() => onApply(p)}
+                title={`${p.model}  ·  ${p.base_url}`}
+                className="inline-flex items-center gap-1.5"
+              >
+                {active && <Check className="h-3.5 w-3.5" strokeWidth={3} />}
+                {p.name}
+              </button>
+              <button
+                type="button"
+                title="删除此预设"
+                onClick={() => onDelete(p.name)}
+                className={cn(
+                  'flex h-5 w-5 items-center justify-center rounded-full transition-colors',
+                  active ? 'hover:bg-white/25' : 'hover:bg-destructive/15 hover:text-destructive',
+                )}
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          )
+        })}
+        <button
+          type="button"
+          onClick={onSaveCurrent}
+          className="shadow-soft-sm hover:shadow-soft-md inline-flex items-center gap-1 rounded-full bg-card px-3 py-1.5 text-[13px] font-medium text-muted-foreground transition-all hover:text-foreground"
+        >
+          <Plus className="h-3.5 w-3.5" strokeWidth={2.5} />
+          另存当前
+        </button>
+      </div>
+    </div>
+  )
+}
+
 // ---- 模型连接卡(LLM / embedding 共用):base_url + api_key + model + 测试连接 ----
 function ModelCard({
   title,
@@ -163,12 +280,14 @@ function ModelCard({
   test,
   onField,
   onTest,
+  showReasoning = false,
 }: {
   title: string
-  conn: { base_url: string; api_key: string; model: string }
+  conn: { base_url: string; api_key: string; model: string; reasoning_effort?: string }
   test: TestState
   onField: (key: string, val: string) => void
   onTest: () => void
+  showReasoning?: boolean // 仅 LLM 卡显示「思考强度」;embedding 无此概念
 }) {
   const [showKey, setShowKey] = useState(false) // 默认密文,点眼睛看明文
   return (
@@ -198,6 +317,23 @@ function ModelCard({
       <Row label="模型名">
         <Input value={conn.model} onChange={(e) => onField('model', e.target.value)} />
       </Row>
+      {showReasoning && (
+        <Row label="思考强度(推理模型)">
+          <select
+            value={conn.reasoning_effort ?? ''}
+            onChange={(e) => onField('reasoning_effort', e.target.value)}
+            className="h-9 rounded-xl bg-secondary/60 px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <option value="">不开启(普通模型选这个)</option>
+            <option value="low">low · 浅思考</option>
+            <option value="medium">medium · 中等</option>
+            <option value="high">high · 深度思考</option>
+          </select>
+          <div className="text-xs text-muted-foreground">
+            仅推理模型(如 gpt-5 系)支持;开启后会展示「思考过程」。普通模型请保持「不开启」,否则可能报错。
+          </div>
+        </Row>
+      )}
       <div className="mt-1 flex items-center gap-3">
         <button
           onClick={onTest}

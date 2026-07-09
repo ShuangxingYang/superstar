@@ -1,4 +1,4 @@
-import { Send } from 'lucide-react'
+import { Brain, ChevronDown, ChevronRight, Send } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
@@ -127,7 +127,7 @@ export default function App() {
                 {messages.map((it, i) =>
                   it.kind === 'tool' ? (
                     <ToolCallCard
-                      key={i}
+                      key={`${currentId ?? 'new'}-${i}`}
                       name={it.name}
                       args={it.args}
                       result={it.result}
@@ -135,10 +135,14 @@ export default function App() {
                       onDecision={(d) => approve(it.id, d)}
                     />
                   ) : (
+                    // key 带上 currentId:切会话时 key 变→强制重新挂载,
+                    // 让 ReasoningBlock 的 useState(live) 按新会话的 live 重取初始态
+                    // (否则 index 复用组件实例,旧的展开态会被带到新会话)
                     <MessageBubble
-                      key={i}
+                      key={`${currentId ?? 'new'}-${i}`}
                       role={it.role}
                       content={it.content}
+                      reasoning={it.reasoning}
                       streaming={streaming && i === messages.length - 1 && it.role === 'assistant'}
                     />
                   ),
@@ -183,16 +187,23 @@ export default function App() {
 }
 
 // 聊天气泡:user 靠右(渐变)、assistant 靠左(白卡浮起),各带圆角头像
+// assistant 若有思考过程,气泡上方叠一个可折叠的「思考过程」块
 function MessageBubble({
   role,
   content,
+  reasoning,
   streaming,
 }: {
   role: 'user' | 'assistant'
   content: string
-  streaming: boolean
+  reasoning?: string
+  streaming: boolean // = 本条正在流式(最后一条 assistant + 全局 streaming)
 }) {
   const isUser = role === 'user'
+  const thinking = streaming && !content // 正文还没来 = 还在思考阶段
+  // 气泡只看正文:有正文就显。思考阶段(无正文)不显空气泡,交给思考块占位。
+  // 与 reasoning 解耦——避免"清理后 reasoning 变空"和气泡判断打架导致整条消息消失。
+  const showBubble = !!content || !thinking
   return (
     <div className={cn('flex gap-3', isUser ? 'flex-row-reverse' : 'flex-row')}>
       <div
@@ -203,17 +214,75 @@ function MessageBubble({
       >
         {isUser ? '你' : 'S'}
       </div>
-      <div
-        className={cn(
-          'max-w-[78%] whitespace-pre-wrap px-4 py-3 text-sm leading-relaxed',
-          isUser
-            ? 'grad-brand shadow-soft-lg rounded-[18px_4px_18px_18px] text-white'
-            : 'shadow-soft-md rounded-[4px_18px_18px_18px] bg-card',
+      {/* items-start:思考块与气泡各自量自身宽度,谁也不撑谁(展开思考不再影响气泡宽度) */}
+      <div className="flex max-w-[78%] flex-col items-start">
+        {!isUser && reasoning && <ReasoningBlock text={reasoning} live={streaming} />}
+        {showBubble && (
+          <div
+            className={cn(
+              'w-fit whitespace-pre-wrap px-4 py-3 text-sm leading-relaxed',
+              isUser
+                ? 'grad-brand shadow-soft-lg rounded-[18px_4px_18px_18px] text-white'
+                : 'shadow-soft-md rounded-[4px_18px_18px_18px] bg-card',
+            )}
+          >
+            {content}
+            {streaming && content ? ' ▋' : ''}
+          </div>
         )}
-      >
-        {content}
-        {streaming ? ' ▋' : ''}
       </div>
+    </div>
+  )
+}
+
+// 思考过程块:可折叠。展开态规则——
+//   · 本轮活跃(live,新对话流式中):默认展开,让你看着它想;
+//   · 历史消息(live=false,切会话/刷新回放):默认折叠,不占地方;
+//   · 本轮输出全部结束(live 由 true→false)后自动折叠一次——除非你手动动过它。
+// 宽度:自身 w-fit + max-w 限宽,不撑父容器,故展开/折叠不影响正文气泡宽度。
+function ReasoningBlock({ text, live }: { text: string; live: boolean }) {
+  const [open, setOpen] = useState(live) // 初始态即区分新对话(展开)/历史(折叠)
+  const touchedRef = useRef(false) // 用户是否手动点过——点过就不再自动折叠,尊重用户
+  const prevLive = useRef(live)
+  // live 由 true→false = 本次思考+回答刚结束 → 自动折叠(用户没手动干预过时)
+  useEffect(() => {
+    if (prevLive.current && !live && !touchedRef.current) setOpen(false)
+    prevLive.current = live
+  }, [live])
+
+  const thinking = live && !text.trim() // 活跃且思考文字还没来 = 正在思考
+  // 网关(gpt-5 系经 tokenhub)常在 reasoning_content 里夹 markdown 注释残片 <!-- --> 和
+  // ** 加粗符,纯文本块里显示是噪音。这里清掉:去空注释、剥 **、并压掉多余空行。
+  const clean = text
+    .replace(/<!--[\s\S]*?-->/g, '') // 去掉 HTML 注释(含空的 <!-- -->)
+    .replace(/\*\*/g, '')            // 去掉加粗标记
+    .replace(/\n{3,}/g, '\n\n')      // 连续空行压成一个
+    .trim()
+  // 思考中即便暂时没实质内容也保留块(显脉冲告诉用户在想);思考完却空了则不显,免留空壳
+  if (!clean && !thinking && !live) return null
+  return (
+    <div className="shadow-soft-sm mb-2 w-fit max-w-full overflow-hidden rounded-2xl bg-secondary/50">
+      <button
+        onClick={() => {
+          touchedRef.current = true
+          setOpen((v) => !v)
+        }}
+        className="flex w-full items-center gap-2 px-3.5 py-2 text-xs font-semibold text-muted-foreground transition-colors hover:text-foreground"
+      >
+        <Brain className={cn('h-3.5 w-3.5', thinking && 'animate-pulse text-primary')} />
+        {thinking ? '思考中…' : '思考过程'}
+        {open ? (
+          <ChevronDown className="ml-auto h-3.5 w-3.5" />
+        ) : (
+          <ChevronRight className="ml-auto h-3.5 w-3.5" />
+        )}
+      </button>
+      {open && (clean || thinking) && (
+        <div className="max-h-56 overflow-y-auto whitespace-pre-wrap px-3.5 pb-3 font-mono text-xs leading-relaxed text-muted-foreground/90">
+          {clean || (thinking ? '(模型正在思考,此网关暂不透传完整推理过程)' : '')}
+          {thinking ? ' ▋' : ''}
+        </div>
+      )}
     </div>
   )
 }

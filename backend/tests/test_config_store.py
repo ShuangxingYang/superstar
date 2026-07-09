@@ -47,3 +47,22 @@ def test_defaults_have_rag_section(tmp_config):
     assert cfg["rag"]["top_n"] == 20
     assert cfg["rag"]["top_k"] == 5
     assert cfg["rag"]["rerank_model"] == "gte-rerank"
+
+
+def test_defaults_llm_has_empty_reasoning_effort(tmp_config):
+    # 推理强度:默认空串 = 不向模型传 reasoning_effort(非推理模型不认这参数)
+    assert config_store.get()["llm"]["reasoning_effort"] == ""
+
+
+def test_defaults_have_empty_llm_profiles(tmp_config):
+    # 配置预设:默认空数组(可存多套 LLM 配置来回切)
+    assert config_store.get()["llm_profiles"] == []
+
+
+def test_update_llm_profiles_replaces_list(tmp_config):
+    # 传数组 = 整体替换(深合并对 list 是替换而非逐元素合并),增删都靠"回传新数组"
+    config_store.update({"llm_profiles": [
+        {"name": "火山", "base_url": "u1", "api_key": "k1", "model": "m1"}]})
+    assert len(config_store.get()["llm_profiles"]) == 1
+    config_store.update({"llm_profiles": []})
+    assert config_store.get()["llm_profiles"] == []

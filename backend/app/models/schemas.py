@@ -18,6 +18,16 @@ class LLMSettings(BaseModel):
     base_url: str = ""
     api_key: str = ""
     model: str = ""
+    reasoning_effort: str = ""   # 空=不传;low/medium/high 才让推理模型吐思考过程
+
+
+# 配置预设:一套具名的 LLM 连接快照。复用 base_url/api_key/model + reasoning_effort + 一个显示名。
+class LLMProfile(BaseModel):
+    name: str = ""
+    base_url: str = ""
+    api_key: str = ""
+    model: str = ""
+    reasoning_effort: str = ""   # 随预设走:切到推理模型的预设自动开思考,切回自动关
 
 
 class EmbeddingSettings(BaseModel):
@@ -41,6 +51,7 @@ class AgentSettings(BaseModel):
 
 class AppConfig(BaseModel):
     llm: LLMSettings
+    llm_profiles: list[LLMProfile] = []
     embedding: EmbeddingSettings
     security: SecuritySettings
     agent: AgentSettings
@@ -51,6 +62,7 @@ class LLMUpdate(BaseModel):
     base_url: str | None = None
     api_key: str | None = None
     model: str | None = None
+    reasoning_effort: str | None = None
 
 
 class EmbeddingUpdate(BaseModel):
@@ -74,6 +86,7 @@ class AgentUpdate(BaseModel):
 
 class ConfigUpdate(BaseModel):
     llm: LLMUpdate | None = None
+    llm_profiles: list[LLMProfile] | None = None   # 传 = 整份替换(增删都回传全量数组)
     embedding: EmbeddingUpdate | None = None
     security: SecurityUpdate | None = None
     agent: AgentUpdate | None = None

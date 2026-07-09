@@ -35,6 +35,26 @@ def test_put_ignores_masked_key(client):
     assert config_store.get()["llm"]["api_key"] == "sk-realkey9999"
 
 
+def test_llm_profiles_round_trip(client):
+    # 配置预设:PUT 传数组整体替换,GET/PUT 都回传(明文 key)
+    profiles = [{"name": "tokenhub", "base_url": "https://x/v1",
+                 "api_key": "sk-real9999", "model": "gpt-5.4"}]
+    r = client.put("/api/settings", json={"llm_profiles": profiles})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["llm_profiles"][0]["name"] == "tokenhub"
+    assert body["llm_profiles"][0]["api_key"] == "sk-real9999"      # 明文回传,切换时能直接用
+    assert client.get("/api/settings").json()["llm_profiles"][0]["model"] == "gpt-5.4"
+
+
+def test_llm_reasoning_effort_round_trip(client):
+    # 推理强度随 llm 配置走:PUT 存,GET 回
+    r = client.put("/api/settings", json={"llm": {"reasoning_effort": "high"}})
+    assert r.status_code == 200
+    assert r.json()["llm"]["reasoning_effort"] == "high"
+    assert client.get("/api/settings").json()["llm"]["reasoning_effort"] == "high"
+
+
 def test_embedding_test_connection(client, monkeypatch):
     # kind='embedding' 应走 embeddings 接口(而非 chat.completions)
     import app.api.routes.settings as s

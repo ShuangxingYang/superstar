@@ -65,17 +65,25 @@ def _prune_dangling_tool_calls(messages: list[dict]) -> list[dict]:
 
 def _accumulate(stream):
     """消费一次流式响应:普通文字 yield text 事件;tool_calls 分片按 index 重组。
-    return (text_parts, tool_calls) —— tool_calls 是 OpenAI 兼容结构,可直接回灌历史。
+    return (text_parts, reasoning_parts, tool_calls) —— tool_calls 是 OpenAI 兼容结构,可直接回灌历史。
 
     面试难点:流式下 tool_calls 是「碎着吐」的——id/name 先到,arguments 的 JSON
     字符串分几个 chunk 拼。用 delta.tool_calls[].index 把碎片按槽位累积。
     """
     text_parts: list[str] = []
+    reasoning_parts: list[str] = []    # 思考分片,拼起来落盘(供刷新回放),但喂模型前会被 _strip_reasoning 摘掉
     acc: dict[int, dict] = {}          # index -> {id, name, arguments}
     for chunk in stream:
         if not chunk.choices:
             continue
         delta = chunk.choices[0].delta
+        # 推理模型:思考内容在正文之前先到,字段名可能是 reasoning_content(DeepSeek/网关系)
+        # 或 reasoning(OpenAI 系)。实时 yield 给前端展示,同时攒起来落盘(刷新可回放);
+        # 但绝不喂回模型——发请求前 _strip_reasoning 会把它摘掉(省 token、不污染上下文)。
+        reasoning = getattr(delta, "reasoning_content", None) or getattr(delta, "reasoning", None)
+        if reasoning:
+            reasoning_parts.append(reasoning)
+            yield {"type": "reasoning", "content": reasoning}
         if getattr(delta, "content", None):
             text_parts.append(delta.content)
             yield {"type": "text", "content": delta.content}
@@ -95,7 +103,13 @@ def _accumulate(stream):
         }
         for _, s in sorted(acc.items())
     ]
-    return text_parts, tool_calls
+    return text_parts, reasoning_parts, tool_calls
+
+
+def _strip_reasoning(messages: list[dict]) -> list[dict]:
+    """摘掉每条消息的 reasoning 字段——思考只给人看(落盘回放用),绝不喂回模型。
+    浅拷贝去键即可:reasoning 是我们额外加的,OpenAI 不认;留着白占 token 还可能被 provider 拒。"""
+    return [{k: v for k, v in m.items() if k != "reasoning"} for m in messages]
 
 
 def _parse_args(tc: dict) -> dict:
@@ -110,28 +124,40 @@ def _parse_args(tc: dict) -> dict:
 def run_agent_streaming(sid: str):
     """喂该会话历史,跑 function calling 循环,逐步 yield typed event。"""
     client, model = llm.get_llm_client()
-    max_iters = config_store.get()["agent"]["max_iters"]
-    logger.info("agent 循环开始: sid=%s, max_iters=%d", sid, max_iters)
+    cfg = config_store.get()
+    max_iters = cfg["agent"]["max_iters"]
+    # 推理强度:配置里设了才传(空=不传)。非推理模型不认这参数,传空会 400;
+    # 设了则让推理模型吐 reasoning_content,由 _accumulate 转成 reasoning 事件给前端。
+    effort = cfg["llm"].get("reasoning_effort") or ""
+    extra = {"reasoning_effort": effort} if effort else {}
+    logger.info("agent 循环开始: sid=%s, max_iters=%d, reasoning_effort=%s",
+                sid, max_iters, effort or "(off)")
     try:
         for _ in range(max_iters):
             history = session_store._fit_context(session_store.read_messages(sid))
             # 发请求前剪掉悬空 tool_call(上一轮被中断留下的脏态),否则 provider 400 毒死会话
             history = _prune_dangling_tool_calls(history)
+            # 摘掉历史里的 reasoning:思考只落盘给人回放,绝不喂回模型(省 token、不污染上下文)
+            history = _strip_reasoning(history)
             messages = [{"role": "system", "content": SYSTEM_PROMPT}, *history]
             stream = client.chat.completions.create(
                 model=model,
                 messages=messages,
                 tools=registry.to_openai_schema(),
                 stream=True,
+                **extra,
             )
-            # yield from:把 _accumulate 里的 text 事件原样透传给外层消费者,
-            # 同时用它的 return 值拿到重组好的 (text_parts, tool_calls)。
-            text_parts, tool_calls = yield from _accumulate(stream)
+            # yield from:把 _accumulate 里的 text/reasoning 事件原样透传给外层消费者,
+            # 同时用它的 return 值拿到重组好的 (text_parts, reasoning_parts, tool_calls)。
+            text_parts, reasoning_parts, tool_calls = yield from _accumulate(stream)
+            reasoning = "".join(reasoning_parts)   # 拼成整段思考,落盘供刷新回放
 
             if not tool_calls:
-                session_store.append_message(
-                    sid, {"role": "assistant", "content": "".join(text_parts)}
-                )
+                # 终答:content + reasoning(有则存,供回放;_strip_reasoning 保证下轮不喂回模型)
+                msg: dict = {"role": "assistant", "content": "".join(text_parts)}
+                if reasoning:
+                    msg["reasoning"] = reasoning
+                session_store.append_message(sid, msg)
                 yield {"type": "done"}
                 return
 
@@ -164,6 +190,7 @@ def run_agent_streaming(sid: str):
                     "role": "assistant",
                     "content": "".join(text_parts) or None,
                     "tool_calls": tool_calls,
+                    **({"reasoning": reasoning} if reasoning else {}),   # 调工具那轮的思考也落盘回放
                 },
             )
             for tid, r in tool_results:

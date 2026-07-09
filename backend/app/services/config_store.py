@@ -27,7 +27,11 @@ DEFAULTS: dict = {
         "base_url": "https://ark.cn-beijing.volces.com/api/v3",
         "api_key": "",
         "model": "",
+        # 推理强度:空=不传(非推理模型不认这参数);设 low/medium/high 才会让网关吐思考过程。
+        "reasoning_effort": "",
     },
+    # 配置预设:存多套 LLM 配置(具名快照),设置页可一键切换。生效的仍是上面的 llm。
+    "llm_profiles": [],
     "embedding": {
         "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
         "api_key": "",

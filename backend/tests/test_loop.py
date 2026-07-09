@@ -23,9 +23,10 @@ class _TC:
 
 
 class _Delta:
-    def __init__(self, content=None, tool_calls=None):
+    def __init__(self, content=None, tool_calls=None, reasoning_content=None):
         self.content = content
         self.tool_calls = tool_calls
+        self.reasoning_content = reasoning_content   # 推理模型的思考字段(网关/DeepSeek 系)
 
 
 class _Chunk:
@@ -90,6 +91,76 @@ def test_grep_then_answer(ready):
     assert msgs[1]["tool_calls"][0]["function"]["name"] == "grep"
     assert msgs[2]["tool_call_id"] == "call_1"
     assert msgs[3]["content"] == "找到了"
+
+
+# ============ P5: 推理模型思考过程(reasoning_content)============
+def _reasoning_then_answer_stream():
+    # 推理模型的典型形状:思考先到(content=null),正文随后
+    yield _Chunk(_Delta(reasoning_content="想想:"))
+    yield _Chunk(_Delta(reasoning_content="连续奇数"))
+    yield _Chunk(_Delta(content="答案是"))
+    yield _Chunk(_Delta(content="31,33,35"))
+
+
+class _EffortCompletions:
+    """记录 create 收到的 kwargs,好断言 reasoning_effort 有没有透传。"""
+    def __init__(self):
+        self.kwargs = None
+
+    def create(self, model, messages, tools, stream, **kwargs):
+        self.kwargs = kwargs
+        return _reasoning_then_answer_stream()
+
+
+class _EffortClient:
+    def __init__(self):
+        self.comp = _EffortCompletions()
+        self.chat = type("Chat", (), {"completions": self.comp})()
+
+
+def test_reasoning_content_yields_events_and_persisted(ready, monkeypatch):
+    client = _EffortClient()
+    monkeypatch.setattr(llm, "get_llm_client", lambda: (client, "fake"))
+    config_store.update({"llm": {"reasoning_effort": "high"}})
+
+    events = list(loop.run_agent_streaming(ready))
+    assert [e["type"] for e in events] == ["reasoning", "reasoning", "text", "text", "done"]
+    reasoning = "".join(e["content"] for e in events if e["type"] == "reasoning")
+    assert reasoning == "想想:连续奇数"
+
+    # 配了 high → 透传给 create
+    assert client.comp.kwargs.get("reasoning_effort") == "high"
+
+    # 思考落盘:终答的 assistant 消息里存了 reasoning(供刷新回放),content 是正文
+    msgs = session_store.read_messages(ready)
+    assert msgs[-1]["content"] == "答案是31,33,35"
+    assert msgs[-1]["reasoning"] == "想想:连续奇数"
+
+
+def test_reasoning_stripped_before_sending_to_model(ready, monkeypatch):
+    # 落盘的 reasoning 不能喂回模型(省 token、不污染上下文):
+    # 造一条带 reasoning 的历史 assistant,再跑一轮,断言发给 create 的 messages 里没有 reasoning。
+    session_store.append_message(ready, {
+        "role": "assistant", "content": "上一轮答案", "reasoning": "上一轮的思考,不该喂回"})
+    session_store.append_message(ready, {"role": "user", "content": "再来一个"})
+
+    client = _EffortClient()
+    monkeypatch.setattr(llm, "get_llm_client", lambda: (client, "fake"))
+    list(loop.run_agent_streaming(ready))
+
+    # 直接查过滤函数:读回历史(含刚落盘的带 reasoning 消息)→ 过滤 → 应无 reasoning
+    stripped = loop._strip_reasoning(session_store.read_messages(ready))
+    assert all("reasoning" not in m for m in stripped)
+    # 且 content 完整保留(过滤只摘 reasoning,不动别的)
+    assert any(m.get("content") == "上一轮答案" for m in stripped)
+
+
+def test_reasoning_effort_not_sent_when_unset(ready, monkeypatch):
+    # 默认配置 reasoning_effort 为空 → 不传该参数(非推理模型不认,传了会 400)
+    client = _EffortClient()
+    monkeypatch.setattr(llm, "get_llm_client", lambda: (client, "fake"))
+    list(loop.run_agent_streaming(ready))
+    assert "reasoning_effort" not in client.comp.kwargs
 
 
 # --- max_iters 用尽:模型永远只调工具、不给终答 ---

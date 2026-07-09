@@ -2,6 +2,7 @@
 export type ChatEvent =
   | { type: 'session'; session_id: string; title: string }
   | { type: 'text'; content: string }
+  | { type: 'reasoning'; content: string }   // 推理模型的思考过程分片(正文前先到)
   | { type: 'tool_call'; id: string; name: string; args: string }
   | { type: 'tool_result'; id: string; result: string }
   | { type: 'approval_required'; id: string; name: string; args: string; preview: ApprovalPreview }
@@ -31,6 +32,7 @@ export type SessionMeta = {
 export type StoredMessage = {
   role: 'user' | 'assistant' | 'tool'
   content: string | null
+  reasoning?: string   // 推理模型的思考过程(落盘回放用;喂模型前后端会过滤掉)
   tool_calls?: { id: string; function: { name: string; arguments: string } }[]
   tool_call_id?: string
 }
@@ -155,8 +157,15 @@ export async function kbStats(): Promise<KbStats> {
 }
 
 // ---- 设置(P4;api_key 为脱敏值,回传不改则后端丢弃) ----
+// 配置预设:一套具名的 LLM 连接快照,用于在多套配置间一键切换
+// reasoning_effort 随预设走:切到推理模型的预设自动开思考,切回自动关
+export type LLMProfile = {
+  name: string; base_url: string; api_key: string; model: string; reasoning_effort: string
+}
+
 export type AppConfig = {
-  llm: { base_url: string; api_key: string; model: string }
+  llm: { base_url: string; api_key: string; model: string; reasoning_effort: string }
+  llm_profiles: LLMProfile[]
   embedding: { base_url: string; api_key: string; model: string }
   security: {
     default_cwd: string
@@ -170,6 +179,7 @@ export type AppConfig = {
 
 export type ConfigUpdate = {
   llm?: Partial<AppConfig['llm']>
+  llm_profiles?: LLMProfile[]
   embedding?: Partial<AppConfig['embedding']>
   security?: Partial<AppConfig['security']>
   agent?: Partial<AppConfig['agent']>
