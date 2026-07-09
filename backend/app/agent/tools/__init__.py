@@ -147,3 +147,16 @@ registry.register(
     "remove_workspace", remove_workspace, RemoveWorkspaceArgs,
     "把一个目录从可访问白名单移除。",
 )
+
+from app.agent.tools.memory import (  # noqa: E402
+    UpdateProfileArgs, UpdateSoulArgs, update_profile, update_soul,
+)
+
+registry.register(
+    "update_profile", update_profile, UpdateProfileArgs,
+    "沉淀关于用户的长期画像(身份、偏好、常用项目等稳定事实)。整份覆盖:先基于 system 里已注入的现有画像合并,再写回完整内容。",
+)
+registry.register(
+    "update_soul", update_soul, UpdateSoulArgs,
+    "调整你自己的长期行为准则。整份覆盖:先基于 system 里已注入的现有准则合并,再写回完整内容。",
+)
