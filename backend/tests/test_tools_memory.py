@@ -33,3 +33,12 @@ def test_update_profile_missing_content_self_heals(tmp_mem):
 def test_memory_tools_registered():
     names = {s["function"]["name"] for s in registry.to_openai_schema()}
     assert "update_profile" in names and "update_soul" in names
+
+
+def test_tool_write_then_reinject_roundtrip(tmp_mem):
+    # 验收核心闭环:Agent 调 update_profile 沉淀 → 之后 build_memory_block 能反映出来
+    # (工具写盘与注入读盘走同一份 profile.md,这里把两半接起来断言端到端一致)
+    registry.run("update_profile", {"content": "用户叫小明,常用 superstar 项目"})
+    block = memory.build_memory_block()
+    assert "## 关于用户" in block
+    assert "用户叫小明,常用 superstar 项目" in block
