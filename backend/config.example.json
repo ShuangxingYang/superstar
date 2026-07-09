@@ -13,7 +13,7 @@
   },
   "security": {
     "workspace_dir": "",
-    "kb_dir": "",
+    "kb_dir": "./data/kb",
     "cmd_whitelist": ["grep", "ls", "cat", "git status", "find", "wc"],
     "cmd_blacklist": ["rm -rf", "sudo", "curl", "wget", "mkfs", "dd"]
   },

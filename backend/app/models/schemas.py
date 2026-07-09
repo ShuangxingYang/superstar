@@ -39,7 +39,7 @@ class EmbeddingSettings(BaseModel):
 class SecuritySettings(BaseModel):
     default_cwd: str = ""
     allowed_dirs: list[str] = []
-    kb_dir: str = ""
+    kb_dir: str = "./data/kb"
     cmd_whitelist: list[str] = []
     cmd_blacklist: list[str] = []
 

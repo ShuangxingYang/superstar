@@ -42,7 +42,8 @@ DEFAULTS: dict = {
         # default_cwd = 命令默认 cwd + 相对路径基准(agent 的"家");allowed_dirs = 白名单可访问根组
         "default_cwd": "~/.superstar",
         "allowed_dirs": ["/Users/shuangxingyang/Desktop"],
-        "kb_dir": "",
+        # 知识库文档落地目录:默认放 data/ 下,与会话/config 同属运行时数据,天然被 .gitignore 忽略
+        "kb_dir": "./data/kb",
         "cmd_whitelist": ["grep", "ls", "cat", "git status", "find", "wc"],
         "cmd_blacklist": ["rm -rf", "sudo", "curl", "wget", "mkfs", "dd"],
     },
