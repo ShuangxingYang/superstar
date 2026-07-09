@@ -24,6 +24,9 @@ data/
 *.db
 *.jsonl
 
+# Qdrant 向量库本地存储(Docker 挂载卷,二进制数据,绝不入库)
+qdrant_storage/
+
 # IDE / OS
 .DS_Store
 .idea/
