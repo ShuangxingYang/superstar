@@ -200,10 +200,12 @@ function MessageBubble({
   streaming: boolean // = 本条正在流式(最后一条 assistant + 全局 streaming)
 }) {
   const isUser = role === 'user'
-  const thinking = streaming && !content // 正文还没来 = 还在思考阶段
-  // 气泡只看正文:有正文就显。思考阶段(无正文)不显空气泡,交给思考块占位。
-  // 与 reasoning 解耦——避免"清理后 reasoning 变空"和气泡判断打架导致整条消息消失。
-  const showBubble = !!content || !thinking
+  // 气泡只看正文:有正文才显,空正文永不显气泡(思考阶段无正文交给思考块占位)。
+  // 关键:正文被 tool_call 打断后会另起新气泡,这条只承载 reasoning 的气泡 content 恒空。
+  // 早先写成 `!!content || !thinking`,回答结束(streaming=false)时会把这种空气泡露出来,
+  // 表现为思考块与工具卡片之间多一个空白气泡——改回纯 `!!content` 修掉。
+  // reasoning 由下方独立的 ReasoningBlock 渲染,不受此判断影响。
+  const showBubble = !!content
   return (
     <div className={cn('flex gap-3', isUser ? 'flex-row-reverse' : 'flex-row')}>
       <div
