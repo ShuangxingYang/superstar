@@ -16,7 +16,8 @@ from app.services import config_store, llm, memory, session_store
 
 logger = logging.getLogger(__name__)
 
-# 极简 system:告诉模型有工具、大致职责。完整画像/soul 注入留 P5。
+# system 基座:告诉模型有哪些工具、大致职责、记忆能力。
+# 每轮循环会把 memory.build_memory_block()(profile 画像 + soul 准则)拼在这段之后(见下方循环)。
 SYSTEM_PROMPT = (
     "你是一个本地助手,可以调用工具查看并修改用户电脑上的文件:"
     "grep(按正则搜索)、glob(按通配列文件)、read_file(读文件)、"
