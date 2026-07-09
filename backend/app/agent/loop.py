@@ -12,7 +12,7 @@ import logging
 from app.agent import pending as pending_store
 from app.agent.gate import gate_tool_call
 from app.agent.tools import registry
-from app.services import config_store, llm, session_store
+from app.services import config_store, llm, memory, session_store
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +29,9 @@ SYSTEM_PROMPT = (
     "写文件和跑命令可能需要用户审批,危险命令会被拒绝,你会在结果里看到反馈。"
     "用 search_kb 查资料时:只依据检索到的片段回答;片段里没有的,"
     "明确说「知识库里没有相关内容」,不要编造;回答时带上来源。"
+    "你有长期记忆:update_profile(沉淀关于用户的画像)、update_soul(调整你自己的行为准则)。"
+    "发现关于用户的稳定事实(偏好、身份、常用项目)时,主动用 update_profile 记下来;"
+    "整份覆盖,先基于上面已注入的记忆合并再写回。"
 )
 
 
@@ -139,7 +142,9 @@ def run_agent_streaming(sid: str):
             history = _prune_dangling_tool_calls(history)
             # 摘掉历史里的 reasoning:思考只落盘给人回放,绝不喂回模型(省 token、不污染上下文)
             history = _strip_reasoning(history)
-            messages = [{"role": "system", "content": SYSTEM_PROMPT}, *history]
+            memory_block = memory.build_memory_block()   # 每轮读盘;内容不变则前缀稳定,保 prompt cache
+            system_content = SYSTEM_PROMPT + memory_block
+            messages = [{"role": "system", "content": system_content}, *history]
             stream = client.chat.completions.create(
                 model=model,
                 messages=messages,

@@ -308,3 +308,46 @@ def test_reject_all_pending_collapses(p2b_ready):
     assert pending.read(sid) is None
     msgs = session_store.read_messages(sid)
     assert any(m["role"] == "tool" and "拒绝" in m["content"] for m in msgs)
+
+
+# ============ P5: 记忆注入 system prompt ============
+class _CaptureCompletions:
+    """记录 create 收到的 messages,好断言记忆有没有拼进 system。"""
+    def __init__(self):
+        self.messages = None
+
+    def create(self, model, messages, tools, stream, **kwargs):
+        self.messages = messages
+        return _answer_stream()          # 直接给终答,不调工具
+
+
+class _CaptureClient:
+    def __init__(self):
+        self.comp = _CaptureCompletions()
+        self.chat = type("Chat", (), {"completions": self.comp})()
+
+
+def test_memory_injected_into_system(ready, monkeypatch):
+    from app.services import memory
+    memory.write_profile("用户叫小明,常用 superstar")
+    memory.write_soul("回答要简短")
+    client = _CaptureClient()
+    monkeypatch.setattr(llm, "get_llm_client", lambda: (client, "fake"))
+
+    list(loop.run_agent_streaming(ready))
+    system = client.comp.messages[0]
+    assert system["role"] == "system"
+    assert "用户叫小明,常用 superstar" in system["content"]
+    assert "回答要简短" in system["content"]
+    assert loop.SYSTEM_PROMPT in system["content"]        # 基础 prompt 仍在
+
+
+def test_system_unchanged_when_memory_empty(ready, monkeypatch):
+    # profile 不存在、soul 置空 → system 内容等于基础 SYSTEM_PROMPT(前缀稳定性回归)
+    from app.services import memory
+    memory.write_soul("")
+    client = _CaptureClient()
+    monkeypatch.setattr(llm, "get_llm_client", lambda: (client, "fake"))
+
+    list(loop.run_agent_streaming(ready))
+    assert client.comp.messages[0]["content"] == loop.SYSTEM_PROMPT
