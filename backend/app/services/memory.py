@@ -1,11 +1,13 @@
 """
-memory.py —— 跨会话长期记忆(profile 用户画像 + soul Agent 准则)
+memory.py —— 跨会话长期记忆(四层:profile 用户画像 / MEMORY 客观事实 / soul Agent 准则 / 每日日志)
 
-设计(详见 docs/specs/2026-07-09-p5-memory-design.md):
-  - data/profile.md:用户画像,初始不存在,由 Agent 通过 update_profile 沉淀
+设计(详见 docs/specs/ 下 p5 / p5plus / p5plusplus 三份记忆 spec):
+  - data/profile.md:用户个人信息,初始不存在,Agent 通过 update_profile 沉淀
+  - data/MEMORY.md:长期客观事实/既定结论(项目约定、技术栈、决策),初始不存在,update_memory 沉淀
   - data/soul.md:Agent 准则,首次读取自举一份默认模板,可被 Agent/用户改
+  - data/memory/YYYY-MM-DD.md:每日日志,只追加,append_log 记录;注入今天+昨天
   - 全量覆盖写、原子落盘;不加内存缓存(每轮读盘,避免"改盘不重启读旧缓存"的坑)
-  - build_memory_block() 把两者拼成注入 system prompt 的稳定文本(保 prompt cache)
+  - build_memory_block() 把四层拼成注入 system prompt 的稳定文本(profile→memory→soul→日志,保 prompt cache)
 """
 import logging
 from datetime import date, datetime, timedelta

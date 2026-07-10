@@ -1,9 +1,10 @@
 """
-memory.py(tools 层)—— Agent 沉淀长期记忆的两个工具。
+memory.py(tools 层)—— Agent 沉淀长期记忆的工具。
 
-update_profile:写用户画像;update_soul:调整 Agent 自己的行为准则。
-均为整份覆盖(不是追加)——旧内容已注入在 system prompt 里,Agent 直接可见,
-先基于它合并再写回完整内容。执行体只调 memory service,自动放行(不走审批)。
+四种记忆按内容归类:update_profile(用户个人信息)、update_memory(客观事实/既定结论)、
+update_soul(Agent 自身准则)、append_log(今天发生的具体事)。
+前三者整份覆盖(旧内容已注入 system prompt,Agent 可见,合并后写回);append_log 追加。
+执行体只调 memory service,自动放行(不走审批)。
 """
 import logging
 

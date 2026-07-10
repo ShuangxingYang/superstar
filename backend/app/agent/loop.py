@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 # system 基座:概括职责与策略,不复述工具清单(每个工具的 what 由其 tool description 负责,
 # API 会自动喂给模型;这里只说 when/why/边界/优先级)。
-# 每轮循环会把 memory.build_memory_block()(profile/soul/日志)拼在这段之后(见下方循环)。
+# 每轮循环会把 memory.build_memory_block()(profile/memory/soul/日志)拼在这段之后(见下方循环)。
 SYSTEM_PROMPT = (
     "你是一个本地助手,可以调用工具查看/修改用户电脑上的文件、检索文档知识库、管理可访问目录。"
     "你只能访问「允许目录」内的文件(默认工作目录 + 白名单目录);路径优先用绝对路径。"
