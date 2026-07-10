@@ -45,3 +45,14 @@ class AppendLogArgs(BaseModel):
 def append_log(args: AppendLogArgs) -> str:
     memory.append_log(args.entry)
     return "已记入今天的日志"
+
+
+class UpdateMemoryArgs(BaseModel):
+    content: str = Field(description=(
+        "长期记忆的完整新内容(整份覆盖)。"
+        "先基于 system 里已注入的现有长期记忆合并,再写回完整内容。"))
+
+
+def update_memory(args: UpdateMemoryArgs) -> str:
+    memory.write_memory(args.content)
+    return "已更新长期记忆(memory)"

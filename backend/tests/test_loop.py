@@ -370,3 +370,13 @@ def test_system_prompt_keeps_memory_routing():
     # 三种记忆的路由要在(哪种事记哪),但不逐个复述工具机制
     assert "update_profile" in loop.SYSTEM_PROMPT
     assert "append_log" in loop.SYSTEM_PROMPT
+
+
+# ============ P5++: 四工具记忆路由 + profile 收紧 ============
+def test_system_prompt_has_update_memory():
+    assert "update_memory" in loop.SYSTEM_PROMPT
+
+
+def test_system_prompt_profile_tightened():
+    # 收紧后 SYSTEM_PROMPT 应体现"个人信息"这一 profile 边界措辞
+    assert "个人信息" in loop.SYSTEM_PROMPT

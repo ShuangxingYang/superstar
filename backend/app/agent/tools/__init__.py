@@ -154,7 +154,9 @@ from app.agent.tools.memory import (  # noqa: E402
 
 registry.register(
     "update_profile", update_profile, UpdateProfileArgs,
-    "沉淀关于用户的长期画像(身份、偏好、常用项目等稳定事实)。整份覆盖:先基于 system 里已注入的现有画像合并,再写回完整内容。",
+    "沉淀关于用户本人的个人信息(姓名、身份、职业、个人偏好等跟人强相关的稳定事实)。"
+    "只有特别确定是用户个人信息时才记;项目/技术的客观事实用 update_memory,不要往这里塞。"
+    "整份覆盖:先基于 system 里已注入的现有画像合并,再写回完整内容。",
 )
 registry.register(
     "update_soul", update_soul, UpdateSoulArgs,
@@ -166,5 +168,15 @@ from app.agent.tools.memory import AppendLogArgs, append_log  # noqa: E402
 registry.register(
     "append_log", append_log, AppendLogArgs,
     "把今天发生的具体事/操作/踩的坑追加到当天日志(流水账,带时间戳)。"
-    "开会话时会自动看到今天+昨天的日志。记'今天的事'用它,记'长期稳定画像'用 update_profile。",
+    "开会话时会自动看到今天+昨天的日志。记'今天的事'用它;"
+    "用户个人信息用 update_profile,项目客观事实用 update_memory。",
+)
+
+from app.agent.tools.memory import UpdateMemoryArgs, update_memory  # noqa: E402
+
+registry.register(
+    "update_memory", update_memory, UpdateMemoryArgs,
+    "沉淀需要长期记住的客观事实与既定结论(项目约定、技术栈、架构决策、重要背景等跟人无关的稳定知识)。"
+    "区别于 profile(用户个人信息)、区别于日志(今天的流水)。"
+    "整份覆盖:先基于 system 里已注入的现有长期记忆合并,再写回完整内容。",
 )

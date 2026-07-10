@@ -67,3 +67,25 @@ def test_append_log_then_reinject_roundtrip(tmp_mem):
     block = memory.build_memory_block()
     assert "的日志(" in block
     assert "端到端验证条目" in block
+
+
+def test_update_memory_writes(tmp_mem):
+    out = registry.run("update_memory", {"content": "项目用 uv 管依赖"})
+    assert "memory" in out or "长期记忆" in out
+    assert memory.read_memory() == "项目用 uv 管依赖"
+
+
+def test_update_memory_missing_content_self_heals(tmp_mem):
+    out = registry.run("update_memory", {})
+    assert "参数错误" in out
+
+
+def test_update_memory_registered():
+    names = {s["function"]["name"] for s in registry.to_openai_schema()}
+    assert "update_memory" in names
+
+
+def test_update_memory_then_reinject_roundtrip(tmp_mem):
+    registry.run("update_memory", {"content": "测试跑 uv run pytest"})
+    block = memory.build_memory_block()
+    assert "## 长期记忆" in block and "测试跑 uv run pytest" in block
