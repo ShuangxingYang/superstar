@@ -92,6 +92,15 @@ def test_append_log_appends_not_overwrites(tmp_mem, monkeypatch):
     assert content.count("\n") == 2                       # 两行条目
 
 
+def test_append_log_multiline_entry_stays_one_line(tmp_mem, monkeypatch):
+    # 多行 entry(工具描述允许传"一小段")要折成单行,保住"一条一行"不变量
+    monkeypatch.setattr(memory, "_today", lambda: date(2026, 7, 10))
+    memory.append_log("第一行\n第二行\n\n第三行")
+    content = memory.read_log(date(2026, 7, 10))
+    assert content.count("\n") == 1                        # 只有一条(结尾一个换行)
+    assert "第一行 第二行 第三行" in content                # 内部换行折成单空格
+
+
 def test_read_log_missing_returns_empty(tmp_mem):
     assert memory.read_log(date(2026, 1, 1)) == ""
 

@@ -83,8 +83,10 @@ def append_log(entry: str) -> None:
     path = _log_path(d)
     path.parent.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now().strftime("%H:%M")           # 条目内时间,仅进文件、不进 system 注入
+    # 把内部换行/多余空白折成单空格:保住「一条一行」不变量(工具描述允许传"一小段")
+    one_line = " ".join(entry.split())
     with path.open("a", encoding="utf-8") as f:
-        f.write(f"- {stamp} {entry.strip()}\n")
+        f.write(f"- {stamp} {one_line}\n")
     logger.info("已追加日志: date=%s, len=%d", d.isoformat(), len(entry))
 
 
