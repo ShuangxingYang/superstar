@@ -42,3 +42,28 @@ def test_tool_write_then_reinject_roundtrip(tmp_mem):
     block = memory.build_memory_block()
     assert "## 关于用户" in block
     assert "用户叫小明,常用 superstar 项目" in block
+
+
+def test_append_log_tool_writes(tmp_mem):
+    out = registry.run("append_log", {"entry": "今天加了日志工具"})
+    assert "日志" in out
+    from app.services import memory as _m
+    assert "今天加了日志工具" in _m.read_log(_m._today())
+
+
+def test_append_log_missing_entry_self_heals(tmp_mem):
+    out = registry.run("append_log", {})
+    assert "参数错误" in out
+
+
+def test_append_log_registered():
+    names = {s["function"]["name"] for s in registry.to_openai_schema()}
+    assert "append_log" in names
+
+
+def test_append_log_then_reinject_roundtrip(tmp_mem):
+    # 端到端接缝:Agent 调 append_log → build_memory_block 能反映出来
+    registry.run("append_log", {"entry": "端到端验证条目"})
+    block = memory.build_memory_block()
+    assert "的日志(" in block
+    assert "端到端验证条目" in block

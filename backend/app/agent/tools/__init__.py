@@ -160,3 +160,11 @@ registry.register(
     "update_soul", update_soul, UpdateSoulArgs,
     "调整你自己的长期行为准则。整份覆盖:先基于 system 里已注入的现有准则合并,再写回完整内容。",
 )
+
+from app.agent.tools.memory import AppendLogArgs, append_log  # noqa: E402
+
+registry.register(
+    "append_log", append_log, AppendLogArgs,
+    "把今天发生的具体事/操作/踩的坑追加到当天日志(流水账,带时间戳)。"
+    "开会话时会自动看到今天+昨天的日志。记'今天的事'用它,记'长期稳定画像'用 update_profile。",
+)

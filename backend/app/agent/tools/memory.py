@@ -34,3 +34,14 @@ class UpdateSoulArgs(BaseModel):
 def update_soul(args: UpdateSoulArgs) -> str:
     memory.write_soul(args.content)
     return "已更新 Agent 准则(soul)"
+
+
+class AppendLogArgs(BaseModel):
+    entry: str = Field(description=(
+        "要追加到今天日志的一条记录:今天发生的具体事、做过的操作、遇到的坑、"
+        "临时的上下文。一句话或一小段。这是流水账,不是长期画像。"))
+
+
+def append_log(args: AppendLogArgs) -> str:
+    memory.append_log(args.entry)
+    return "已记入今天的日志"
