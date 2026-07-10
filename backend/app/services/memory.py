@@ -130,7 +130,8 @@ def recent_logs() -> list[tuple[date, str]]:
 def build_memory_block() -> str:
     """拼成注入 system prompt 的一段文本;都空 → 空串。
     整体兜错:读记忆失败绝不让 agent 循环挂掉,退化成本轮不注入 + 记 warning。
-    格式固定(日志小标题只用文件名日期,无 HH:MM/随机项),保 prompt cache 前缀稳定。"""
+    注入顺序固定 profile→memory→soul→日志(日志小标题只用文件名日期,无 HH:MM/随机项),
+    保 prompt cache 前缀稳定。"""
     try:
         profile = read_profile().strip()
         memory_ = read_memory().strip()
