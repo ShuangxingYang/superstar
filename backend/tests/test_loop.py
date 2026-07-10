@@ -351,3 +351,22 @@ def test_system_unchanged_when_memory_empty(ready, monkeypatch):
 
     list(loop.run_agent_streaming(ready))
     assert client.comp.messages[0]["content"] == loop.SYSTEM_PROMPT
+
+
+# ============ P5+: SYSTEM_PROMPT 瘦身回归 ============
+def test_system_prompt_no_tool_list_recital():
+    # 瘦身后不应再逐个复述工具是什么(tool description 已负责 what)
+    assert "grep(按正则搜索)" not in loop.SYSTEM_PROMPT
+    assert "glob(按通配列文件)" not in loop.SYSTEM_PROMPT
+
+
+def test_system_prompt_keeps_policy():
+    # 策略/边界必须保留(tool schema 传达不了的)
+    assert "允许目录" in loop.SYSTEM_PROMPT           # 沙箱边界
+    assert "来源" in loop.SYSTEM_PROMPT                # search_kb 反幻觉
+
+
+def test_system_prompt_keeps_memory_routing():
+    # 三种记忆的路由要在(哪种事记哪),但不逐个复述工具机制
+    assert "update_profile" in loop.SYSTEM_PROMPT
+    assert "append_log" in loop.SYSTEM_PROMPT
