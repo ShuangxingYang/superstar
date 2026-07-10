@@ -149,3 +149,46 @@ def test_build_block_prefix_stable_same_day(tmp_mem, monkeypatch):
     memory.write_profile("用户叫小明")
     memory.append_log("干了活")
     assert memory.build_memory_block() == memory.build_memory_block()
+
+
+# ============ P5++: 长期客观记忆 MEMORY.md ============
+def test_read_memory_missing_returns_empty(tmp_mem):
+    assert memory.read_memory() == ""                  # 不存在 → 空串,不自举
+
+
+def test_write_then_read_memory_overwrites(tmp_mem):
+    memory.write_memory("项目用 uv 管依赖")
+    assert memory.read_memory() == "项目用 uv 管依赖"
+    memory.write_memory("测试跑 uv run pytest")         # 整份覆盖
+    assert memory.read_memory() == "测试跑 uv run pytest"
+
+
+def test_build_block_includes_memory(tmp_mem, monkeypatch):
+    monkeypatch.setattr(memory, "_today", lambda: date(2026, 7, 10))
+    memory.write_soul("")                              # 排除 soul 干扰
+    memory.write_memory("项目用 uv")
+    block = memory.build_memory_block()
+    assert "## 长期记忆" in block and "项目用 uv" in block
+
+
+def test_build_block_no_memory_section_when_empty(tmp_mem, monkeypatch):
+    monkeypatch.setattr(memory, "_today", lambda: date(2026, 7, 10))
+    memory.write_soul("")
+    block = memory.build_memory_block()
+    assert "## 长期记忆" not in block
+
+
+def test_build_block_injection_order(tmp_mem, monkeypatch):
+    # 注入顺序:profile → memory → soul(都稳定,排一起;日志垫底)
+    monkeypatch.setattr(memory, "_today", lambda: date(2026, 7, 10))
+    memory.write_profile("用户叫小明")
+    memory.write_memory("项目用 uv")
+    memory.write_soul("用中文")
+    block = memory.build_memory_block()
+    assert block.index("## 关于用户") < block.index("## 长期记忆") < block.index("## 你的准则")
+
+
+def test_build_block_memory_prefix_stable(tmp_mem, monkeypatch):
+    monkeypatch.setattr(memory, "_today", lambda: date(2026, 7, 10))
+    memory.write_memory("项目用 uv")
+    assert memory.build_memory_block() == memory.build_memory_block()

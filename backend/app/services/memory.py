@@ -63,6 +63,24 @@ def write_soul(content: str) -> None:
     logger.info("已更新 Agent 准则(soul), len=%d", len(content))
 
 
+def _memory_path() -> Path:
+    return Path(settings.data_dir) / "MEMORY.md"
+
+
+def read_memory() -> str:
+    """读 MEMORY.md(长期客观记忆)。不存在 → 空串(不自举,同 profile)。errors=replace 防乱码。"""
+    p = _memory_path()
+    if not p.exists():
+        return ""
+    return p.read_text(encoding="utf-8", errors="replace")
+
+
+def write_memory(content: str) -> None:
+    """整份覆盖写 MEMORY.md(原子写)。"""
+    atomic_json.write_text_atomic(_memory_path(), content)
+    logger.info("已更新长期记忆(memory), len=%d", len(content))
+
+
 def _today() -> date:
     """当前日期。独立成函数 → 测试可 monkeypatch 造'今天/昨天/跨天'场景。"""
     return date.today()
@@ -115,6 +133,7 @@ def build_memory_block() -> str:
     格式固定(日志小标题只用文件名日期,无 HH:MM/随机项),保 prompt cache 前缀稳定。"""
     try:
         profile = read_profile().strip()
+        memory_ = read_memory().strip()
         soul = read_soul().strip()
         logs = recent_logs()
     except Exception as e:  # noqa: BLE001 - 关键路径,任何异常都退化成"不注入"
@@ -123,6 +142,8 @@ def build_memory_block() -> str:
     parts: list[str] = []
     if profile:
         parts.append(f"## 关于用户\n{profile}")
+    if memory_:
+        parts.append(f"## 长期记忆\n{memory_}")
     if soul:
         parts.append(f"## 你的准则\n{soul}")
     for d, content in logs:
