@@ -69,3 +69,74 @@ def test_build_block_survives_read_error(tmp_mem, monkeypatch):
     # 读记忆抛异常时,build_memory_block 必须兜住返回空串(不让 agent 循环挂掉)
     monkeypatch.setattr(memory, "read_profile", lambda: (_ for _ in ()).throw(OSError("boom")))
     assert memory.build_memory_block() == ""
+
+
+# ============ P5+: 每日日志层 ============
+from datetime import date
+
+
+def test_append_log_writes_today(tmp_mem, monkeypatch):
+    monkeypatch.setattr(memory, "_today", lambda: date(2026, 7, 10))
+    memory.append_log("帮用户加了日志层")
+    content = memory.read_log(date(2026, 7, 10))
+    assert "帮用户加了日志层" in content
+    assert content.startswith("- ")                 # 带 "- HH:MM " 前缀的条目
+
+
+def test_append_log_appends_not_overwrites(tmp_mem, monkeypatch):
+    monkeypatch.setattr(memory, "_today", lambda: date(2026, 7, 10))
+    memory.append_log("第一条")
+    memory.append_log("第二条")
+    content = memory.read_log(date(2026, 7, 10))
+    assert "第一条" in content and "第二条" in content   # 追加,不覆盖
+    assert content.count("\n") == 2                       # 两行条目
+
+
+def test_read_log_missing_returns_empty(tmp_mem):
+    assert memory.read_log(date(2026, 1, 1)) == ""
+
+
+def test_recent_logs_today_and_yesterday_only(tmp_mem, monkeypatch):
+    # 造:今天(07-10)、昨天(07-09)、前天(07-08)各写一条,前天不该出现
+    for d, text in [(date(2026, 7, 10), "今天事"),
+                    (date(2026, 7, 9), "昨天事"),
+                    (date(2026, 7, 8), "前天事")]:
+        monkeypatch.setattr(memory, "_today", lambda d=d: d)
+        memory.append_log(text)
+    monkeypatch.setattr(memory, "_today", lambda: date(2026, 7, 10))
+    logs = memory.recent_logs()
+    assert [d for d, _ in logs] == [date(2026, 7, 10), date(2026, 7, 9)]  # 今天在前,只两天
+    joined = " ".join(c for _, c in logs)
+    assert "今天事" in joined and "昨天事" in joined and "前天事" not in joined
+
+
+def test_recent_logs_skips_empty_days(tmp_mem, monkeypatch):
+    # 只有今天有日志,昨天没有 → recent_logs 只返回今天
+    monkeypatch.setattr(memory, "_today", lambda: date(2026, 7, 10))
+    memory.append_log("只有今天")
+    logs = memory.recent_logs()
+    assert [d for d, _ in logs] == [date(2026, 7, 10)]
+
+
+def test_build_block_includes_today_log(tmp_mem, monkeypatch):
+    monkeypatch.setattr(memory, "_today", lambda: date(2026, 7, 10))
+    memory.write_soul("")                            # 排除 soul 干扰
+    memory.append_log("加了日志层")
+    block = memory.build_memory_block()
+    assert "## 今天的日志(2026-07-10)" in block
+    assert "加了日志层" in block
+
+
+def test_build_block_no_log_section_when_empty(tmp_mem, monkeypatch):
+    monkeypatch.setattr(memory, "_today", lambda: date(2026, 7, 10))
+    memory.write_soul("")
+    block = memory.build_memory_block()
+    assert "的日志(" not in block                     # 无日志 → 无日志段
+
+
+def test_build_block_prefix_stable_same_day(tmp_mem, monkeypatch):
+    # 前缀稳定性:同一天、内容不变,两次调用逐字节相同(保 prompt cache)
+    monkeypatch.setattr(memory, "_today", lambda: date(2026, 7, 10))
+    memory.write_profile("用户叫小明")
+    memory.append_log("干了活")
+    assert memory.build_memory_block() == memory.build_memory_block()

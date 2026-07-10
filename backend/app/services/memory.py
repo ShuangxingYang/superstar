@@ -8,6 +8,7 @@ memory.py —— 跨会话长期记忆(profile 用户画像 + soul Agent 准则)
   - build_memory_block() 把两者拼成注入 system prompt 的稳定文本(保 prompt cache)
 """
 import logging
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from app.config import settings
@@ -62,13 +63,58 @@ def write_soul(content: str) -> None:
     logger.info("已更新 Agent 准则(soul), len=%d", len(content))
 
 
+def _today() -> date:
+    """当前日期。独立成函数 → 测试可 monkeypatch 造'今天/昨天/跨天'场景。"""
+    return date.today()
+
+
+def _log_dir() -> Path:
+    return Path(settings.data_dir) / "memory"
+
+
+def _log_path(d: date) -> Path:
+    return _log_dir() / f"{d.isoformat()}.md"          # 如 memory/2026-07-10.md
+
+
+def append_log(entry: str) -> None:
+    """把一条带时间戳的条目追加到今天的日志。目录/文件不存在则建。
+    用 open(mode='a') 追加(最坏只坏最后一行,不必原子)。"""
+    d = _today()
+    path = _log_path(d)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now().strftime("%H:%M")           # 条目内时间,仅进文件、不进 system 注入
+    with path.open("a", encoding="utf-8") as f:
+        f.write(f"- {stamp} {entry.strip()}\n")
+    logger.info("已追加日志: date=%s, len=%d", d.isoformat(), len(entry))
+
+
+def read_log(d: date) -> str:
+    """读某天日志。不存在 → 空串。errors=replace 防乱码。"""
+    p = _log_path(d)
+    if not p.exists():
+        return ""
+    return p.read_text(encoding="utf-8", errors="replace")
+
+
+def recent_logs() -> list[tuple[date, str]]:
+    """返回'今天+昨天'里非空的 (日期, 内容),今天在前。供 build_memory_block 用。"""
+    today = _today()
+    out: list[tuple[date, str]] = []
+    for d in (today, today - timedelta(days=1)):
+        content = read_log(d).strip()
+        if content:
+            out.append((d, content))
+    return out
+
+
 def build_memory_block() -> str:
-    """拼成注入 system prompt 的一段文本;两者都空 → 空串。
+    """拼成注入 system prompt 的一段文本;都空 → 空串。
     整体兜错:读记忆失败绝不让 agent 循环挂掉,退化成本轮不注入 + 记 warning。
-    格式固定(无时间戳/随机项),保 prompt cache 前缀稳定。"""
+    格式固定(日志小标题只用文件名日期,无 HH:MM/随机项),保 prompt cache 前缀稳定。"""
     try:
         profile = read_profile().strip()
         soul = read_soul().strip()
+        logs = recent_logs()
     except Exception as e:  # noqa: BLE001 - 关键路径,任何异常都退化成"不注入"
         logger.warning("读取记忆失败,本轮不注入: %s", type(e).__name__)
         return ""
@@ -77,6 +123,9 @@ def build_memory_block() -> str:
         parts.append(f"## 关于用户\n{profile}")
     if soul:
         parts.append(f"## 你的准则\n{soul}")
+    for d, content in logs:
+        label = "今天" if d == _today() else "昨天"
+        parts.append(f"## {label}的日志({d.isoformat()})\n{content}")
     if not parts:
         return ""
     return "\n\n" + "\n\n".join(parts)
