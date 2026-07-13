@@ -2,11 +2,10 @@
 gate.py —— 处置判定:给一个 tool_call,决定「直接跑 / 直接拒 / 停下等审批」。
 
 放在 loop 调工具之前:因为要先知道该不该停下等审批,不能等执行了才判。
-  - write_file:越界 → deny;否则 approve(顺带造 diff 预览)
+  - write_file:越界 → deny;否则 auto(允许目录内免审批,2026-07-13 起)
   - run_command:白 → auto,黑 → deny,灰 → approve(带命令预览)
   - 只读工具(read_file/grep/glob)→ auto
 """
-import difflib
 import logging
 from pathlib import Path
 
@@ -19,21 +18,13 @@ logger = logging.getLogger(__name__)
 def gate_tool_call(name: str, args: dict) -> tuple[str, dict | None]:
     """返回 (action, preview)。action ∈ {'auto','deny','approve'}。"""
     if name == "write_file":
+        # 写文件已改为「允许目录内自动放行」(2026-07-13):越界仍拒,允许目录内直接跑,不再审批。
         try:
-            target = security.safe_path(args["path"])          # 越界 → 连审批都不给
+            security.safe_path(args["path"])          # 越界 → deny(沙箱最后防线在工具内,这里提前拦)
         except (SecurityError, KeyError):
             logger.info("gate: write_file 越界/缺参 → deny")
             return "deny", None
-        old = target.read_text(encoding="utf-8", errors="replace") if target.is_file() else ""
-        new = args.get("content") or ""
-        # 按行切并保证每行以 \n 结尾:否则无结尾换行的内容(如 "hello")会让 difflib 把
-        # -hello 和 +world 拼成一行 "-hello+world",前端按 \n 着色就切不开。
-        old_lines = [ln if ln.endswith("\n") else ln + "\n" for ln in old.splitlines()]
-        new_lines = [ln if ln.endswith("\n") else ln + "\n" for ln in new.splitlines()]
-        diff = "".join(difflib.unified_diff(
-            old_lines, new_lines,
-            fromfile=f"{args['path']} (原)", tofile=f"{args['path']} (新)"))
-        return "approve", {"kind": "write", "path": args["path"], "diff": diff or "(无变化)"}
+        return "auto", None
 
     if name == "run_command":
         level = security.classify_command(args.get("command", ""))

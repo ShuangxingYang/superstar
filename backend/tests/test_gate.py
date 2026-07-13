@@ -21,22 +21,10 @@ def test_gate_readonly_auto(ws):
     assert gate_tool_call("read_file", {"path": "a"})[0] == "auto"
 
 
-def test_gate_write_approve_with_diff(ws):
+def test_gate_write_inside_auto(ws):
+    # write 改为允许目录内自动放行(不再 approve、不再造 diff)
     (ws / "a.txt").write_text("old\n", encoding="utf-8")
-    action, preview = gate_tool_call("write_file", {"path": "a.txt", "content": "new\n"})
-    assert action == "approve"
-    assert preview["kind"] == "write" and preview["path"] == "a.txt"
-    assert "old" in preview["diff"] and "new" in preview["diff"]
-
-
-def test_gate_diff_splits_lines_without_trailing_newline(ws):
-    # 旧内容无结尾换行(如 "hello"),diff 不能把 -hello 和 +world 挤成一行 -hello+world;
-    # 前端按 \n 切行着色,必须保证每个 +/- 行独占一行。
-    (ws / "b.txt").write_text("hello", encoding="utf-8")   # 注意:无结尾 \n
-    _, preview = gate_tool_call("write_file", {"path": "b.txt", "content": "world"})
-    lines = preview["diff"].split("\n")
-    assert any(ln.startswith("-hello") and "+world" not in ln for ln in lines)  # -hello 独占一行
-    assert any(ln.startswith("+world") for ln in lines)                          # +world 独占一行
+    assert gate_tool_call("write_file", {"path": "a.txt", "content": "new\n"}) == ("auto", None)
 
 
 def test_gate_write_escape_deny(ws):
