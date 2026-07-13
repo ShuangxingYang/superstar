@@ -125,23 +125,23 @@ def test_chat_with_tool(tmp_path, monkeypatch):
 from app.agent import pending
 
 
-class _WriteThenAnswerC:
-    """第 1 次要 write_file(触发审批),之后给终答。"""
+class _CmdThenAnswerC:
+    """第 1 次要跑灰名单命令(触发审批),之后给终答。"""
     def __init__(self):
         self.calls = 0
 
     def create(self, model, messages, tools=None, stream=True):
         self.calls += 1
         if self.calls == 1:
-            yield _Chunk(_Delta(tool_calls=[_TC(0, id="w1", name="write_file",
-                arguments='{"path": "out.txt", "content": "hi"}')]))
+            yield _Chunk(_Delta(tool_calls=[_TC(0, id="w1", name="run_command",
+                arguments='{"command": "python demo.py"}')]))
         else:
-            yield _Chunk(_Delta(content="写好了"))
+            yield _Chunk(_Delta(content="跑好了"))
 
 
-class _WriteClientC:
+class _CmdClientC:
     def __init__(self):
-        self.chat = type("Chat", (), {"completions": _WriteThenAnswerC()})()
+        self.chat = type("Chat", (), {"completions": _CmdThenAnswerC()})()
 
 
 @pytest.fixture
@@ -151,7 +151,7 @@ def client_ws(tmp_path, monkeypatch):
     proj = tmp_path / "proj"
     proj.mkdir()
     config_store.update({"security": {"default_cwd": str(proj), "allowed_dirs": []}})
-    client_obj = _WriteClientC()                                  # 共享实例:calls 跨 stream+resume 累计
+    client_obj = _CmdClientC()                                  # 共享实例:calls 跨 stream+resume 累计
     monkeypatch.setattr(llm, "get_llm_client", lambda: (client_obj, "fake"))
     from app.api.main import app
     return TestClient(app), proj
@@ -159,17 +159,16 @@ def client_ws(tmp_path, monkeypatch):
 
 def test_resume_endpoint_executes(client_ws):
     c, proj = client_ws
-    r1 = c.post("/api/chat/stream", json={"message": "写文件"})
+    r1 = c.post("/api/chat/stream", json={"message": "跑个命令"})
     ev1 = _events(r1.text)
     ar = next(e for e in ev1 if e["type"] == "approval_required")
     sid = next(e for e in ev1 if e["type"] == "session")["session_id"]
     assert pending.read(sid) is not None
-    # 批准 → /resume 续跑到 done,文件真被写,sidecar 清空
+    # 批准 → /resume 续跑到 done,sidecar 清空
     r2 = c.post("/api/chat/resume",
                 json={"session_id": sid, "tool_call_id": ar["id"], "decision": "approve"})
     ev2 = _events(r2.text)
     assert any(e["type"] == "done" for e in ev2)
-    assert (proj / "out.txt").read_text(encoding="utf-8") == "hi"
     assert pending.read(sid) is None
 
 

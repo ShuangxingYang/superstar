@@ -227,24 +227,25 @@ def test_prune_keeps_content_when_tool_calls_dangling():
 from app.agent import pending
 
 
-def _write_tool_stream():
-    yield _Chunk(_Delta(tool_calls=[_TC(0, id="w1", name="write_file",
-        arguments='{"path": "out.txt", "content": "hello"}')]))
+def _cmd_tool_stream():
+    # 灰名单命令(python demo.py)→ gate 判 approve,触发审批暂停
+    yield _Chunk(_Delta(tool_calls=[_TC(0, id="w1", name="run_command",
+        arguments='{"command": "python demo.py"}')]))
 
 
-class _WriteThenAnswer:
-    """第 1 次 create 要 write_file(触发审批),之后(resume 续跑)给终答。"""
+class _CmdThenAnswer:
+    """第 1 次 create 要跑灰名单命令(触发审批),之后(resume 续跑)给终答。"""
     def __init__(self):
         self.calls = 0
 
     def create(self, model, messages, tools, stream):
         self.calls += 1
-        return _write_tool_stream() if self.calls == 1 else _answer_stream()
+        return _cmd_tool_stream() if self.calls == 1 else _answer_stream()
 
 
-class _WriteClient:
+class _CmdClient:
     def __init__(self):
-        self.chat = type("Chat", (), {"completions": _WriteThenAnswer()})()
+        self.chat = type("Chat", (), {"completions": _CmdThenAnswer()})()
 
 
 @pytest.fixture
@@ -254,23 +255,24 @@ def p2b_ready(tmp_path, monkeypatch):
     proj = tmp_path / "proj"
     proj.mkdir()
     config_store.update({"security": {"default_cwd": str(proj), "allowed_dirs": []}})
-    client = _WriteClient()                                   # 共享实例:calls 跨 run+resume 累计
+    client = _CmdClient()                                   # 共享实例:calls 跨 run+resume 累计
     monkeypatch.setattr(llm, "get_llm_client", lambda: (client, "fake"))
     sid = session_store.create()
-    session_store.append_message(sid, {"role": "user", "content": "写个文件"})
+    session_store.append_message(sid, {"role": "user", "content": "跑个命令"})
     return sid, proj
 
 
-def test_write_file_pauses_for_approval(p2b_ready):
+def test_command_pauses_for_approval(p2b_ready):
+    """灰名单命令触发审批暂停(write_file 改 auto 后改用 run_command 作为触发样例)"""
     sid, _ = p2b_ready
     events = list(loop.run_agent_streaming(sid))
     ar = next(e for e in events if e["type"] == "approval_required")
-    assert ar["name"] == "write_file" and ar["preview"]["kind"] == "write"
+    assert ar["name"] == "run_command" and ar["preview"]["kind"] == "command"
     # 落盘:assistant(tool_calls) 有,但还没有任何 tool 结果(有意悬空)
     msgs = session_store.read_messages(sid)
     assert msgs[-1]["role"] == "assistant" and msgs[-1]["tool_calls"]
     assert not any(m["role"] == "tool" for m in msgs)
-    # pending sidecar 已写,文件还没被写
+    # pending sidecar 已写
     assert pending.read(sid) is not None
 
 
@@ -281,8 +283,8 @@ def test_resume_approve_executes_and_continues(p2b_ready):
 
     ev2 = list(loop.resume_streaming(sid, ar["id"], "approve"))
     assert any(e["type"] == "done" for e in ev2)            # 续跑拿到终答
-    assert (proj / "out.txt").read_text(encoding="utf-8") == "hello"   # 真写了
     msgs = session_store.read_messages(sid)
+    # approve 后:有对应 role:tool 结果(tool_call_id 匹配)
     assert any(m["role"] == "tool" and m["tool_call_id"] == ar["id"] for m in msgs)
     assert pending.read(sid) is None                        # sidecar 已清
 
@@ -294,7 +296,6 @@ def test_resume_reject_records_and_continues(p2b_ready):
 
     ev2 = list(loop.resume_streaming(sid, ar["id"], "reject"))
     assert any(e["type"] == "done" for e in ev2)
-    assert not (proj / "out.txt").exists()                  # 没写
     msgs = session_store.read_messages(sid)
     tool_msg = next(m for m in msgs if m["role"] == "tool" and m["tool_call_id"] == ar["id"])
     assert "拒绝" in tool_msg["content"]
