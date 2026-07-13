@@ -112,7 +112,7 @@ from app.agent.tools.fs import WriteFileArgs, write_file  # noqa: E402
 
 registry.register(
     "write_file", write_file, WriteFileArgs,
-    "把文本内容写入一个文件(绝对路径,或相对默认工作目录);不存在则新建,存在则整体覆盖。此操作需用户审批。",
+    "把文本内容写入一个文件(绝对路径,或相对默认工作目录);不存在则新建,存在则整体覆盖。允许目录内自动写入、无需审批;写允许目录之外会被拒绝。",
 )
 
 from app.agent.tools.search import GlobArgs, GrepArgs, glob, grep  # noqa: E402
