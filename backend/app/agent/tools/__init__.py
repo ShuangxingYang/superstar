@@ -49,9 +49,14 @@ class ToolRegistry:
     ) -> None:
         self._tools[name] = Tool(name, func, args_model, description)
 
-    def to_openai_schema(self) -> list[dict]:
+    def to_openai_schema(self, names: set[str] | None = None) -> list[dict]:
         """每个工具 → {type:'function', function:{name, description, parameters}}。
-        parameters 直接用 Pydantic 的 model_json_schema()(标准 JSON Schema,OpenAI 认)。"""
+        parameters 直接用 Pydantic 的 model_json_schema()(标准 JSON Schema,OpenAI 认)。
+        names 为 None 时导出全部;给定时只导出集合内存在的工具(供子 Agent 取只读写子集)。"""
+        tools = (
+            self._tools.values() if names is None
+            else [self._tools[n] for n in names if n in self._tools]
+        )
         return [
             {
                 "type": "function",
@@ -61,7 +66,7 @@ class ToolRegistry:
                     "parameters": t.args_model.model_json_schema(),
                 },
             }
-            for t in self._tools.values()
+            for t in tools
         ]
 
     def run(self, name: str, raw_args: dict) -> str:

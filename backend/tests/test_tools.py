@@ -220,3 +220,23 @@ def test_search_kb_registered():
     schema = registry.to_openai_schema()
     names = {s["function"]["name"] for s in schema}
     assert "search_kb" in names
+
+
+def test_to_openai_schema_subset():
+    from app.agent.tools import registry
+    names = {s["function"]["name"] for s in registry.to_openai_schema({"read_file", "grep"})}
+    assert names == {"read_file", "grep"}
+
+
+def test_to_openai_schema_full_when_names_none():
+    # 不传 names → 全量(向后兼容回归)
+    from app.agent.tools import registry
+    full = {s["function"]["name"] for s in registry.to_openai_schema()}
+    assert {"read_file", "write_file", "grep", "glob", "search_kb"} <= full
+
+
+def test_to_openai_schema_subset_ignores_unknown():
+    # 集合里有不存在的工具名 → 静默跳过,不报错
+    from app.agent.tools import registry
+    names = {s["function"]["name"] for s in registry.to_openai_schema({"read_file", "nope"})}
+    assert names == {"read_file"}
