@@ -185,3 +185,14 @@ registry.register(
     "区别于 profile(用户个人信息)、区别于日志(今天的流水)。"
     "整份覆盖:先基于 system 里已注入的现有长期记忆合并,再写回完整内容。",
 )
+
+from app.agent.tools.subagent import DispatchSubagentArgs, dispatch_subagent  # noqa: E402
+
+registry.register(
+    "dispatch_subagent", dispatch_subagent, DispatchSubagentArgs,
+    "派发一个子 Agent 去独立完成一个子任务(搜代码、读文件、查知识库、写文件)。"
+    "子 Agent 有独立上下文,只把最终结论返回给你——适合「要翻很多文件/大量检索/批量改动」的活,"
+    "避免这些中间过程塞满当前对话。子 Agent 能读能写,但不能跑命令、不能改目录权限;"
+    "需要跑命令时,它会把建议写进结论,你再自己执行。"
+    "传入 task:自足的子任务描述(子 Agent 看不到当前对话)。",
+)
