@@ -11,9 +11,12 @@ app/api/main.py —— FastAPI 应用实例(整个后端的入口装配点)
 当前已挂:settings 路由、chat 路由。
 """
 
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.agent import scheduler
 from app.api.routes import chat as chat_routes
 from app.api.routes import kb as kb_routes
 from app.api.routes import memory as memory_routes
@@ -36,7 +39,15 @@ def _setup_logging() -> None:
 
 _setup_logging()
 
-app = FastAPI(title="Superstar Backend", version="0.1.0")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    scheduler.start_scheduler()   # 启动:按 config 决定是否注册 job
+    yield
+    scheduler.stop_scheduler()    # 关闭:停调度器
+
+
+app = FastAPI(title="Superstar Backend", version="0.1.0", lifespan=lifespan)
 
 # CORS: 前端(Vite dev 跑在 5173)和后端(8000)端口不同 = 跨域,
 # 浏览器默认拦跨域请求,这里显式放行前端来源。
