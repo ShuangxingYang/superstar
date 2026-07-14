@@ -48,6 +48,12 @@ DEFAULTS: dict = {
         "cmd_blacklist": ["rm -rf", "sudo", "curl", "wget", "mkfs", "dd"],
     },
     "agent": {"max_iters": 10, "temperature": 0.7},
+    # 记忆自动蒸馏:默认关,定时把最近 scan_days 天日志提炼进 MEMORY.md
+    "distill": {
+        "enabled": False,       # 默认关:后端起不自动跑
+        "interval_hours": 72,   # 定时频率:每 3 天一次
+        "scan_days": 3,         # 每次扫最近 3 天日志
+    },
     # RAG 参数:切块大小/重叠、召回 top_n、精排 top_k、rerank 模型(空=跳过 rerank)
     "rag": {
         "chunk_size": 500,

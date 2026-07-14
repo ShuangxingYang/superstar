@@ -66,3 +66,13 @@ def test_update_llm_profiles_replaces_list(tmp_config):
     assert len(config_store.get()["llm_profiles"]) == 1
     config_store.update({"llm_profiles": []})
     assert config_store.get()["llm_profiles"] == []
+
+
+def test_defaults_has_distill_section(tmp_path, monkeypatch):
+    from app.config import settings
+    monkeypatch.setattr(settings, "data_dir", str(tmp_path))
+    config_store._reset_cache()
+    distill = config_store.get()["distill"]
+    assert distill["enabled"] is False
+    assert distill["interval_hours"] == 72
+    assert distill["scan_days"] == 3
