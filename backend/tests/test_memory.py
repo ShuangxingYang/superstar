@@ -192,3 +192,26 @@ def test_build_block_memory_prefix_stable(tmp_mem, monkeypatch):
     monkeypatch.setattr(memory, "_today", lambda: date(2026, 7, 10))
     memory.write_memory("项目用 uv")
     assert memory.build_memory_block() == memory.build_memory_block()
+
+
+def test_recent_log_days(tmp_path, monkeypatch):
+    from datetime import date
+    from app.config import settings
+    from app.services import memory
+    monkeypatch.setattr(settings, "data_dir", str(tmp_path))
+    # 固定"今天"为可控日期,造 今天 / 前2天 / 前5天 三份日志
+    fixed_today = date(2026, 7, 14)
+    monkeypatch.setattr(memory, "_today", lambda: fixed_today)
+    log_dir = tmp_path / "memory"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    (log_dir / "2026-07-14.md").write_text("- 10:00 今天的事\n", encoding="utf-8")
+    (log_dir / "2026-07-12.md").write_text("- 09:00 前两天的事\n", encoding="utf-8")
+    (log_dir / "2026-07-09.md").write_text("- 08:00 前五天的事\n", encoding="utf-8")
+
+    # n=3:只覆盖 07-14/13/12 → 命中 14 和 12,今天在前;09 在窗口外
+    got = memory.recent_log_days(3)
+    assert [d.isoformat() for d, _ in got] == ["2026-07-14", "2026-07-12"]
+    assert "今天的事" in got[0][1]
+
+    # n=0 → 空
+    assert memory.recent_log_days(0) == []

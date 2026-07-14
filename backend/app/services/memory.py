@@ -129,6 +129,19 @@ def recent_logs() -> list[tuple[date, str]]:
     return out
 
 
+def recent_log_days(n: int) -> list[tuple[date, str]]:
+    """返回最近 n 天里非空的 (日期, 内容),今天在前。n<=0 → 空。供蒸馏用。
+    (与 recent_logs 区别:recent_logs 固定今天+昨天用于注入;本函数按 n 天用于蒸馏。)"""
+    today = _today()
+    out: list[tuple[date, str]] = []
+    for i in range(max(n, 0)):
+        d = today - timedelta(days=i)
+        content = read_log(d).strip()
+        if content:
+            out.append((d, content))
+    return out
+
+
 def build_memory_block() -> str:
     """拼成注入 system prompt 的一段文本;都空 → 空串。
     整体兜错:读记忆失败绝不让 agent 循环挂掉,退化成本轮不注入 + 记 warning。
