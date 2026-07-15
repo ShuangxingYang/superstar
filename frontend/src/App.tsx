@@ -147,6 +147,20 @@ export default function App() {
                     />
                   ),
                 )}
+                {/* 「正在思考中…」占位:发送后到 assistant 首个内容(思考/正文/工具)到达之间的空窗,
+                    末项还是 user 消息 → 显示占位,缓解「按钮置灰像卡住」的等待焦虑。
+                    一旦有 assistant 内容进来,末项变 assistant,占位自动消失(交给真实气泡/思考块)。
+                    纯 UI 层,不往 messages 塞假数据,不影响落盘/回放。 */}
+                {(() => {
+                  const last = messages[messages.length - 1]
+                  const waiting = streaming && last?.kind === 'msg' && last.role === 'user'
+                  return waiting ? (
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <Brain className="h-4 w-4 animate-pulse" />
+                      <span className="animate-pulse">正在思考中…</span>
+                    </div>
+                  ) : null
+                })()}
               </div>
             </div>
 
