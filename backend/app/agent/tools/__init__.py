@@ -186,7 +186,9 @@ registry.register(
     "整份覆盖:先基于 system 里已注入的现有长期记忆合并,再写回完整内容。",
 )
 
-from app.agent.tools.subagent import DispatchSubagentArgs, dispatch_subagent  # noqa: E402
+from app.agent.tools.subagent import (  # noqa: E402
+    DispatchSubagentArgs, DispatchSubagentsArgs, dispatch_subagent, dispatch_subagents,
+)
 
 registry.register(
     "dispatch_subagent", dispatch_subagent, DispatchSubagentArgs,
@@ -195,4 +197,12 @@ registry.register(
     "避免这些中间过程塞满当前对话。子 Agent 能读能写,但不能跑命令、不能改目录权限;"
     "需要跑命令时,它会把建议写进结论,你再自己执行。"
     "传入 task:自足的子任务描述(子 Agent 看不到当前对话)。",
+)
+
+registry.register(
+    "dispatch_subagents", dispatch_subagents, DispatchSubagentsArgs,
+    "并行派发多个子 Agent,各自独立完成一个子任务(搜代码/读文件/查知识库/写文件),"
+    "全部完成后按顺序把结论一起返回。适合「几件互不依赖的调研/改动想同时进行」的场景,"
+    "比串行一个个派更快。只派一个用 dispatch_subagent(单数)即可。"
+    "传入 tasks:自足的子任务描述列表(子 Agent 看不到当前对话)。",
 )
