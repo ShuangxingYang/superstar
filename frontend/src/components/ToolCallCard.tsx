@@ -58,7 +58,8 @@ export default function ToolCallCard({ name, args, result, approval, onDecision 
   return (
     <div
       className={cn(
-        'overflow-hidden rounded-2xl bg-card text-sm transition-shadow',
+        // 宽度跟消息气泡对齐(max-w-[78%]),不横向铺满整行,视觉更协调
+        'w-fit max-w-[78%] overflow-hidden rounded-2xl bg-card text-sm transition-shadow',
         pending ? 'shadow-[0_4px_20px_rgba(240,80,107,.18)]' : 'shadow-soft-md hover:shadow-soft-lg',
       )}
     >
