@@ -6,6 +6,7 @@ SSE 事件:session / text / tool_call / tool_result / done / error。
 时序:定 sid(无则懒创建)→ 落 user 消息 → 发 session 事件 → 把 loop 产的 event 原样转 SSE。
 真正的 function calling 循环、工具执行、落盘都在 agent/loop.py;路由只做通道适配。
 """
+import asyncio
 import json
 import logging
 
@@ -29,20 +30,21 @@ def _sse(event: dict) -> str:
 def chat_stream(req: schemas.ChatRequest) -> StreamingResponse:
     logger.info("chat 请求: msg_len=%d, has_sid=%s", len(req.message), bool(req.session_id))
 
-    def event_stream():
+    async def event_stream():
         # 定 sid:带 sid 则续写,不带则懒创建(首句到达才落盘,不产生空会话)
-        sid = req.session_id or session_store.create()
+        sid = req.session_id or await asyncio.to_thread(session_store.create)
         try:
             # 残留 pending 防护:审批未决却发了新消息 → 先自动拒绝收尾,避免悬空毒死会话
-            if req.session_id and pending_store.read(sid):
-                loop.reject_all_pending(sid)
+            if req.session_id and await asyncio.to_thread(pending_store.read, sid):
+                await loop.reject_all_pending(sid)
             # 先落用户消息:哪怕模型挂了也不丢输入(首条会顺带生成标题)
-            session_store.append_message(sid, {"role": "user", "content": req.message})
-            title = next((s["title"] for s in session_store.list_sessions() if s["id"] == sid), "")
+            await asyncio.to_thread(session_store.append_message, sid, {"role": "user", "content": req.message})
+            sessions = await asyncio.to_thread(session_store.list_sessions)
+            title = next((s["title"] for s in sessions if s["id"] == sid), "")
             # session 事件必须在 text 之前:前端据此记住新 sid、刷新列表标题
             yield _sse({"type": "session", "session_id": sid, "title": title})
             # 循环产啥,原样转 SSE(text/tool_call/tool_result/done/error 都自动透传)
-            for event in loop.run_agent_streaming(sid):
+            async for event in loop.run_agent_streaming(sid):
                 yield _sse(event)
         except Exception as e:  # noqa: BLE001 - 兜底:错误也当事件发给前端展示
             logger.warning("chat 失败: sid=%s err=%s", sid, type(e).__name__)
@@ -61,9 +63,9 @@ def chat_resume(req: schemas.ResumeRequest) -> StreamingResponse:
     logger.info("resume 请求: sid=%s, id=%s, decision=%s",
                 req.session_id, req.tool_call_id, req.decision)
 
-    def event_stream():
+    async def event_stream():
         try:
-            for event in loop.resume_streaming(req.session_id, req.tool_call_id, req.decision):
+            async for event in loop.resume_streaming(req.session_id, req.tool_call_id, req.decision):
                 yield _sse(event)
         except Exception as e:  # noqa: BLE001 - 兜底:错误也当事件发给前端展示
             logger.warning("resume 失败: sid=%s err=%s", req.session_id, type(e).__name__)

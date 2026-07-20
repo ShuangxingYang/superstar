@@ -41,7 +41,7 @@ class _ScriptCompletions:
         self.calls = 0
         self.seen = []
 
-    def create(self, model, messages, tools, **kwargs):
+    async def create(self, model, messages, tools, **kwargs):
         self.seen.append(list(messages))
         resp = self.script[min(self.calls, len(self.script) - 1)]
         self.calls += 1
@@ -56,7 +56,7 @@ class _ScriptClient:
 
 class _RaisingClient:
     class _C:
-        def create(self, *a, **k):
+        async def create(self, *a, **k):
             raise RuntimeError("boom")
     def __init__(self):
         self.chat = type("Chat", (), {"completions": _RaisingClient._C()})()
@@ -79,33 +79,33 @@ def _install(monkeypatch, script):
     return client
 
 
-def test_subagent_normal_loop(sub_ready, monkeypatch):
+async def test_subagent_normal_loop(sub_ready, monkeypatch):
     # 第一轮 grep,第二轮给结论
     _install(monkeypatch, [
         _Resp(_Msg(tool_calls=[_TC("c1", "grep", '{"pattern": "def"}')])),
         _Resp(_Msg(content="找到了 a.py:1 的 def foo")),
     ])
-    out = subagent.run_subagent("在项目里找 def")
+    out = await subagent.run_subagent("在项目里找 def")
     assert out == "找到了 a.py:1 的 def foo"
 
 
-def test_subagent_can_write(sub_ready, monkeypatch):
+async def test_subagent_can_write(sub_ready, monkeypatch):
     _install(monkeypatch, [
         _Resp(_Msg(tool_calls=[_TC("w1", "write_file", '{"path": "out.txt", "content": "hi"}')])),
         _Resp(_Msg(content="已写好 out.txt")),
     ])
-    out = subagent.run_subagent("写个 out.txt")
+    out = await subagent.run_subagent("写个 out.txt")
     assert "已写好" in out
     assert (sub_ready / "out.txt").read_text(encoding="utf-8") == "hi"   # 真写了(auto,无暂停)
 
 
-def test_subagent_rejects_forbidden_tool(sub_ready, monkeypatch):
+async def test_subagent_rejects_forbidden_tool(sub_ready, monkeypatch):
     # 幻觉调 run_command(不在白名单)→ 拒绝串喂回 → 第二轮给结论
     client = _install(monkeypatch, [
         _Resp(_Msg(tool_calls=[_TC("c1", "run_command", '{"command": "ls"}')])),
         _Resp(_Msg(content="好的,不跑命令")),
     ])
-    out = subagent.run_subagent("试图跑命令")
+    out = await subagent.run_subagent("试图跑命令")
     assert "好的" in out
     # 第二轮 create 收到的 messages 里应有 role:tool 的拒绝串
     fed_back = [m for m in client.comp.seen[1] if m.get("role") == "tool"]
@@ -117,29 +117,29 @@ def test_subagent_no_recursion_in_whitelist():
     assert "dispatch_subagent" not in subagent.SUBAGENT_TOOLS
 
 
-def test_subagent_max_iters(sub_ready, monkeypatch):
+async def test_subagent_max_iters(sub_ready, monkeypatch):
     config_store.update({"agent": {"max_iters": 2}})
     _install(monkeypatch, [
         _Resp(_Msg(tool_calls=[_TC("c", "grep", '{"pattern": "x"}')])),   # 永远只调工具
     ])
-    out = subagent.run_subagent("死循环任务")
+    out = await subagent.run_subagent("死循环任务")
     assert "最大步数" in out
 
 
-def test_subagent_llm_exception_caught(sub_ready, monkeypatch):
+async def test_subagent_llm_exception_caught(sub_ready, monkeypatch):
     monkeypatch.setattr(llm, "get_llm_client", lambda: (_RaisingClient(), "fake"))
-    out = subagent.run_subagent("会炸的任务")
+    out = await subagent.run_subagent("会炸的任务")
     assert out.startswith("(子 Agent 执行失败")   # 收敛成字符串,没抛出
 
 
-def test_subagent_sandbox_blocks_escape(sub_ready, monkeypatch):
+async def test_subagent_sandbox_blocks_escape(sub_ready, monkeypatch):
     # 子 Agent 不过 gate,但越界写被 write_file 内部 safe_path 拦成"安全拦截"串
     client = _install(monkeypatch, [
         _Resp(_Msg(tool_calls=[_TC("w1", "write_file",
             '{"path": "../../etc/evil", "content": "x"}')])),
         _Resp(_Msg(content="写不了,越界了")),
     ])
-    out = subagent.run_subagent("试图越界写")
+    out = await subagent.run_subagent("试图越界写")
     assert "写不了" in out
     fed_back = [m for m in client.comp.seen[1] if m.get("role") == "tool"]
     assert any("安全拦截" in m["content"] for m in fed_back)

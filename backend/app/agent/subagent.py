@@ -11,6 +11,7 @@ subagent.py —— 子 Agent 引擎(隔离上下文跑一个子任务)。
   - 无落盘:messages 只活在内存,跑完即焚。
   - 递归防护:dispatch_subagent 不在白名单 → 子 Agent 拿不到它 → 不会派孙 Agent。
 """
+import asyncio
 import json
 import logging
 
@@ -42,11 +43,11 @@ def _safe_json(raw: str | None) -> dict:
         return {}
 
 
-def run_subagent(task: str) -> str:
-    """独立上下文跑一个子任务,同步跑到底,返回给主 Agent 的结论字符串。绝不向上抛。"""
+async def run_subagent(task: str, cancel_event=None) -> str:
+    """独立上下文跑一个子任务,async 跑到底,返回给主 Agent 的结论字符串。绝不向上抛。"""
     try:
         client, model = llm.get_llm_client()
-        max_iters = config_store.get()["agent"]["max_iters"]     # 复用父的步数上限
+        max_iters = (await asyncio.to_thread(config_store.get))["agent"]["max_iters"]     # 复用父的步数上限
         schema = registry.to_openai_schema(SUBAGENT_TOOLS)       # 只给读写子集
         messages = [
             {"role": "system", "content": SUBAGENT_SYSTEM_PROMPT},
@@ -54,7 +55,7 @@ def run_subagent(task: str) -> str:
         ]
         logger.info("子 Agent 开始: task_len=%d, max_iters=%d", len(task), max_iters)
         for i in range(max_iters):
-            resp = client.chat.completions.create(model=model, messages=messages, tools=schema)
+            resp = await client.chat.completions.create(model=model, messages=messages, tools=schema)
             msg = resp.choices[0].message
             if not msg.tool_calls:                               # 不调工具了 → 这就是结论
                 result = (msg.content or "").strip()
@@ -64,7 +65,7 @@ def run_subagent(task: str) -> str:
             for tc in msg.tool_calls:
                 name = tc.function.name
                 if name in SUBAGENT_TOOLS:
-                    out = registry.run(name, _safe_json(tc.function.arguments))
+                    out = await registry.run_async(name, _safe_json(tc.function.arguments))
                 else:                                            # 双保险:幻觉调越权工具 → 喂回自愈
                     out = f"错误:子 Agent 只能用工具 {sorted(SUBAGENT_TOOLS)},不能调用 {name}"
                     logger.warning("子 Agent 越权工具: name=%s", name)

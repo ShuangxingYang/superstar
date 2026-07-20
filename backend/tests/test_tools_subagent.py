@@ -16,20 +16,20 @@ def test_dispatch_subagent_not_in_subagent_tools():
     assert "dispatch_subagent" not in sub_names
 
 
-def test_dispatch_subagent_passes_task(monkeypatch):
+async def test_dispatch_subagent_passes_task(monkeypatch):
     # 外壳把 task 透传给 run_subagent,并把返回值原样带回
     seen = {}
-    def fake_run(task):
+    async def fake_run(task, cancel_event=None):
         seen["task"] = task
         return "子 Agent 的结论"
     monkeypatch.setattr(subagent, "run_subagent", fake_run)   # 外壳内延迟 import 会取到这个替身
-    out = registry.run("dispatch_subagent", {"task": "查一下 X 的用法"})
+    out = await registry.run_async("dispatch_subagent", {"task": "查一下 X 的用法"})
     assert seen["task"] == "查一下 X 的用法"
     assert out == "子 Agent 的结论"
 
 
-def test_dispatch_subagent_missing_task_self_heals():
-    out = registry.run("dispatch_subagent", {})
+async def test_dispatch_subagent_missing_task_self_heals():
+    out = await registry.run_async("dispatch_subagent", {})
     assert "参数错误" in out
 
 
@@ -49,34 +49,59 @@ def test_dispatch_subagents_not_in_subagent_tools():
     assert "dispatch_subagents" not in subagent.SUBAGENT_TOOLS
 
 
-def test_dispatch_subagents_runs_all_and_preserves_order(monkeypatch):
+async def test_dispatch_subagents_runs_all_and_preserves_order(monkeypatch):
     # monkeypatch run_subagent:按 task 回不同结果,验证并发跑全 + 保序
-    def fake_run(task):
+    async def fake_run(task, cancel_event=None):
         return f"结论-{task}"
     monkeypatch.setattr(subagent, "run_subagent", fake_run)
-    out = registry.run("dispatch_subagents", {"tasks": ["A", "B", "C"]})
+    out = await registry.run_async("dispatch_subagents", {"tasks": ["A", "B", "C"]})
     # 保序:A 在 B 前、B 在 C 前
     assert out.index("结论-A") < out.index("结论-B") < out.index("结论-C")
     assert "A" in out and "B" in out and "C" in out
 
 
-def test_dispatch_subagents_empty_tasks():
-    out = registry.run("dispatch_subagents", {"tasks": []})
+async def test_dispatch_subagents_empty_tasks():
+    out = await registry.run_async("dispatch_subagents", {"tasks": []})
     assert "没有要派发的子任务" in out
 
 
-def test_dispatch_subagents_one_failure_does_not_break_others(monkeypatch):
+async def test_dispatch_subagents_one_failure_does_not_break_others(monkeypatch):
     # 某个子 Agent 返回失败串(run_subagent 本就兜底不抛),其余照常
-    def fake_run(task):
+    async def fake_run(task, cancel_event=None):
         if task == "bad":
             return "(子 Agent 执行失败:boom)"
         return f"结论-{task}"
     monkeypatch.setattr(subagent, "run_subagent", fake_run)
-    out = registry.run("dispatch_subagents", {"tasks": ["ok1", "bad", "ok2"]})
+    out = await registry.run_async("dispatch_subagents", {"tasks": ["ok1", "bad", "ok2"]})
     assert "结论-ok1" in out and "结论-ok2" in out
     assert "子 Agent 执行失败" in out          # 失败的也如实带回,不吞
 
 
-def test_dispatch_subagents_missing_tasks_self_heals():
-    out = registry.run("dispatch_subagents", {})
+async def test_dispatch_subagents_missing_tasks_self_heals():
+    out = await registry.run_async("dispatch_subagents", {})
     assert "参数错误" in out                    # Pydantic 缺 tasks → registry 自愈
+
+
+async def test_dispatch_subagents_respects_max_parallel(monkeypatch):
+    # 并发上限:一次派超过 _MAX_PARALLEL 个,同时在飞的子 Agent 数不得超过上限
+    # (原 ThreadPoolExecutor max_workers 的 async 等价;信号量节流。防"无限并发打爆 API"回归)
+    import asyncio
+
+    from app.agent.tools import subagent as tools_subagent
+
+    inflight = 0
+    peak = 0
+
+    async def fake_run(task, cancel_event=None):
+        nonlocal inflight, peak
+        inflight += 1
+        peak = max(peak, inflight)
+        await asyncio.sleep(0.01)   # 留出重叠窗口,让并发真正堆叠
+        inflight -= 1
+        return f"结论-{task}"
+
+    monkeypatch.setattr(subagent, "run_subagent", fake_run)
+    n = tools_subagent._MAX_PARALLEL + 3
+    out = await registry.run_async("dispatch_subagents", {"tasks": [f"t{i}" for i in range(n)]})
+    assert peak <= tools_subagent._MAX_PARALLEL   # 峰值并发不超上限
+    assert all(f"结论-t{i}" in out for i in range(n))   # 全部仍跑完、结果齐

@@ -20,10 +20,14 @@ class _Chunk:
         self.choices = [type("C", (), {"delta": delta})()]
 
 
+async def _text_stream():
+    for c in ["你", "好"]:
+        yield _Chunk(_Delta(content=c))
+
+
 class _TextCompletions:
-    def create(self, model, messages, tools=None, stream=True):
-        for c in ["你", "好"]:
-            yield _Chunk(_Delta(content=c))
+    async def create(self, model, messages, tools=None, stream=True, **kwargs):
+        return _text_stream()
 
 
 class _TextClient:
@@ -84,16 +88,21 @@ class _TC:
         self.function = _Fn(name, arguments)
 
 
+async def _tool_stream():
+    yield _Chunk(_Delta(tool_calls=[_TC(0, id="c1", name="glob", arguments='{"pattern": "*.py"}')]))
+
+
+async def _answer_stream():
+    yield _Chunk(_Delta(content="有一个文件"))
+
+
 class _ToolCompletions:
     def __init__(self):
         self.calls = 0
 
-    def create(self, model, messages, tools=None, stream=True):
+    async def create(self, model, messages, tools=None, stream=True, **kwargs):
         self.calls += 1
-        if self.calls == 1:
-            yield _Chunk(_Delta(tool_calls=[_TC(0, id="c1", name="glob", arguments='{"pattern": "*.py"}')]))
-        else:
-            yield _Chunk(_Delta(content="有一个文件"))
+        return _tool_stream() if self.calls == 1 else _answer_stream()
 
 
 class _ToolClient:
@@ -125,18 +134,23 @@ def test_chat_with_tool(tmp_path, monkeypatch):
 from app.agent import pending
 
 
+async def _cmd_stream():
+    yield _Chunk(_Delta(tool_calls=[_TC(0, id="w1", name="run_command",
+        arguments='{"command": "python demo.py"}')]))
+
+
+async def _done_stream():
+    yield _Chunk(_Delta(content="跑好了"))
+
+
 class _CmdThenAnswerC:
     """第 1 次要跑灰名单命令(触发审批),之后给终答。"""
     def __init__(self):
         self.calls = 0
 
-    def create(self, model, messages, tools=None, stream=True):
+    async def create(self, model, messages, tools=None, stream=True, **kwargs):
         self.calls += 1
-        if self.calls == 1:
-            yield _Chunk(_Delta(tool_calls=[_TC(0, id="w1", name="run_command",
-                arguments='{"command": "python demo.py"}')]))
-        else:
-            yield _Chunk(_Delta(content="跑好了"))
+        return _cmd_stream() if self.calls == 1 else _done_stream()
 
 
 class _CmdClientC:

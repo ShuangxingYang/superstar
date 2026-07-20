@@ -31,7 +31,7 @@ def distill_memory() -> str:
             return "最近无日志可蒸馏,跳过"
         existing = memory.read_memory()
         logs_text = "\n\n".join(f"## {d.isoformat()}\n{c}" for d, c in logs)
-        client, model = llm.get_llm_client()
+        client, model = llm.get_sync_llm_client()
         logger.info("蒸馏开始:扫 %d 天日志, 现有记忆 len=%d", len(logs), len(existing))
         resp = client.chat.completions.create(
             model=model,
