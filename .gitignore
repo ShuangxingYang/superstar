@@ -32,5 +32,8 @@ qdrant_storage/
 .idea/
 .vscode/
 
+# 运行日志(本地 stdout/stderr 重定向产物,非项目产物)
+*.log
+
 # superpowers 脚手架临时目录(进度台账等,非项目产物)
 .superpowers/
