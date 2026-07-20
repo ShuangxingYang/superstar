@@ -6,6 +6,7 @@ loop.py —— function calling 流式循环(P2a 引擎,Agent 的「大脑」)
 产 typed event(text/tool_call/tool_result/done/error),与输出通道解耦——
 chat 路由把 event 原样转 SSE,二期飞书适配器可消费同样的 event。
 """
+import asyncio
 import json
 import logging
 
@@ -65,17 +66,19 @@ def _prune_dangling_tool_calls(messages: list[dict]) -> list[dict]:
     return result
 
 
-def _accumulate(stream):
+async def _accumulate(stream, out: dict):
     """消费一次流式响应:普通文字 yield text 事件;tool_calls 分片按 index 重组。
-    return (text_parts, reasoning_parts, tool_calls) —— tool_calls 是 OpenAI 兼容结构,可直接回灌历史。
+    结果通过 out 回传:out["text_parts"], out["reasoning_parts"], out["tool_calls"]。
 
     面试难点:流式下 tool_calls 是「碎着吐」的——id/name 先到,arguments 的 JSON
     字符串分几个 chunk 拼。用 delta.tool_calls[].index 把碎片按槽位累积。
+
+    async generator 不能 return 值,所以用可变容器 out 回传累积结果。
     """
     text_parts: list[str] = []
     reasoning_parts: list[str] = []    # 思考分片,拼起来落盘(供刷新回放),但喂模型前会被 _strip_reasoning 摘掉
     acc: dict[int, dict] = {}          # index -> {id, name, arguments}
-    for chunk in stream:
+    async for chunk in stream:
         if not chunk.choices:
             continue
         delta = chunk.choices[0].delta
@@ -105,7 +108,9 @@ def _accumulate(stream):
         }
         for _, s in sorted(acc.items())
     ]
-    return text_parts, reasoning_parts, tool_calls
+    out["text_parts"] = text_parts
+    out["reasoning_parts"] = reasoning_parts
+    out["tool_calls"] = tool_calls
 
 
 def _strip_reasoning(messages: list[dict]) -> list[dict]:
@@ -123,10 +128,10 @@ def _parse_args(tc: dict) -> dict:
         return {}
 
 
-def run_agent_streaming(sid: str):
+async def run_agent_streaming(sid: str, cancel_event: "asyncio.Event | None" = None):
     """喂该会话历史,跑 function calling 循环,逐步 yield typed event。"""
     client, model = llm.get_llm_client()
-    cfg = config_store.get()
+    cfg = await asyncio.to_thread(config_store.get)
     max_iters = cfg["agent"]["max_iters"]
     # 推理强度:配置里设了才传(空=不传)。非推理模型不认这参数,传空会 400;
     # 设了则让推理模型吐 reasoning_content,由 _accumulate 转成 reasoning 事件给前端。
@@ -136,24 +141,32 @@ def run_agent_streaming(sid: str):
                 sid, max_iters, effort or "(off)")
     try:
         for _ in range(max_iters):
-            history = session_store._fit_context(session_store.read_messages(sid))
+            # TODO(第二步中断): if cancel_event and cancel_event.is_set(): return
+            history = await asyncio.to_thread(
+                lambda: session_store._fit_context(session_store.read_messages(sid))
+            )
             # 发请求前剪掉悬空 tool_call(上一轮被中断留下的脏态),否则 provider 400 毒死会话
             history = _prune_dangling_tool_calls(history)
             # 摘掉历史里的 reasoning:思考只落盘给人回放,绝不喂回模型(省 token、不污染上下文)
             history = _strip_reasoning(history)
-            memory_block = memory.build_memory_block()   # 每轮读盘;内容不变则前缀稳定,保 prompt cache
+            memory_block = await asyncio.to_thread(memory.build_memory_block)  # 每轮读盘;内容不变则前缀稳定,保 prompt cache
             system_content = SYSTEM_PROMPT + memory_block
             messages = [{"role": "system", "content": system_content}, *history]
-            stream = client.chat.completions.create(
+            stream = await client.chat.completions.create(
                 model=model,
                 messages=messages,
                 tools=registry.to_openai_schema(),
                 stream=True,
                 **extra,
             )
-            # yield from:把 _accumulate 里的 text/reasoning 事件原样透传给外层消费者,
-            # 同时用它的 return 值拿到重组好的 (text_parts, reasoning_parts, tool_calls)。
-            text_parts, reasoning_parts, tool_calls = yield from _accumulate(stream)
+            # async for:把 _accumulate 里的 text/reasoning 事件原样透传给外层消费者,
+            # 同时用 out 容器拿到重组好的 (text_parts, reasoning_parts, tool_calls)。
+            acc_out: dict = {}
+            async for ev in _accumulate(stream, acc_out):
+                yield ev
+            text_parts = acc_out["text_parts"]
+            reasoning_parts = acc_out["reasoning_parts"]
+            tool_calls = acc_out["tool_calls"]
             reasoning = "".join(reasoning_parts)   # 拼成整段思考,落盘供刷新回放
 
             if not tool_calls:
@@ -161,7 +174,7 @@ def run_agent_streaming(sid: str):
                 msg: dict = {"role": "assistant", "content": "".join(text_parts)}
                 if reasoning:
                     msg["reasoning"] = reasoning
-                session_store.append_message(sid, msg)
+                await asyncio.to_thread(session_store.append_message, sid, msg)
                 yield {"type": "done"}
                 return
 
@@ -182,13 +195,16 @@ def run_agent_streaming(sid: str):
                 else:
                     yield {"type": "tool_call", "id": tc["id"], "name": name,
                            "args": tc["function"]["arguments"]}
-                    result = ("被安全策略拒绝(黑名单/越界)" if action == "deny"
-                              else registry.run(name, parsed))   # 仅 auto 真执行
+                    if action == "deny":
+                        result = "被安全策略拒绝(黑名单/越界)"
+                    else:
+                        result = await registry.run_async(name, parsed)   # 仅 auto 真执行
                     yield {"type": "tool_result", "id": tc["id"], "result": result}
                     tool_results.append((tc["id"], result))
 
             # 一整轮跑完才落盘:assistant(tool_calls) + 各 tool 结果「连续追加、中间不 yield」(治本防悬空)。
-            session_store.append_message(
+            await asyncio.to_thread(
+                session_store.append_message,
                 sid,
                 {
                     "role": "assistant",
@@ -198,10 +214,11 @@ def run_agent_streaming(sid: str):
                 },
             )
             for tid, r in tool_results:
-                session_store.append_message(sid, {"role": "tool", "tool_call_id": tid, "content": r})
+                await asyncio.to_thread(session_store.append_message, sid,
+                                        {"role": "tool", "tool_call_id": tid, "content": r})
             if pending_calls:
                 # 有待审批 → 写 sidecar 标记「有意悬空」,结束流,等 /resume 恢复
-                pending_store.write(sid, pending_calls, previews)
+                await asyncio.to_thread(pending_store.write, sid, pending_calls, previews)
                 logger.info("审批暂停: sid=%s, 待审批=%d", sid, len(pending_calls))
                 return
             # 无 pending → 回 for 顶,带工具结果再问模型(全 auto/deny 的轮,与 P2a 行为一致)
@@ -212,11 +229,11 @@ def run_agent_streaming(sid: str):
         yield {"type": "error", "message": str(e)}
 
 
-def resume_streaming(sid: str, tool_call_id: str, decision: str):
+async def resume_streaming(sid: str, tool_call_id: str, decision: str):
     """恢复一个待审批的 tool_call。decision ∈ 'approve'|'reject'。
     批准 → 真执行;拒绝 → 落「已拒绝」。若本轮还有别的待批 → 结束等下次;全批完 → 继续正常循环。
     """
-    pend = pending_store.read(sid)
+    pend = await asyncio.to_thread(pending_store.read, sid)
     if not pend:
         yield {"type": "error", "message": "没有待审批的操作"}
         return
@@ -226,31 +243,33 @@ def resume_streaming(sid: str, tool_call_id: str, decision: str):
         return
 
     if decision == "approve":
-        result = registry.run(tc["function"]["name"], _parse_args(tc))   # 真正执行
+        result = await registry.run_async(tc["function"]["name"], _parse_args(tc))   # 真正执行
     else:
         result = "用户已拒绝此操作"
     logger.info("审批恢复: sid=%s, id=%s, decision=%s", sid, tool_call_id, decision)
     yield {"type": "tool_result", "id": tool_call_id, "result": result}
-    session_store.append_message(sid, {"role": "tool", "tool_call_id": tool_call_id, "content": result})
+    await asyncio.to_thread(session_store.append_message, sid,
+                            {"role": "tool", "tool_call_id": tool_call_id, "content": result})
 
     remaining = [t for t in pend["tool_calls"] if t["id"] != tool_call_id]
     if remaining:                              # 本轮还有别的待批 → 结束,等下次点击
         prev = {k: v for k, v in pend["previews"].items() if k != tool_call_id}
-        pending_store.write(sid, remaining, prev)
+        await asyncio.to_thread(pending_store.write, sid, remaining, prev)
         return
-    pending_store.clear(sid)                   # 全批完 → 带新结果继续问模型
-    yield from run_agent_streaming(sid)
+    await asyncio.to_thread(pending_store.clear, sid)   # 全批完 → 带新结果继续问模型
+    async for ev in run_agent_streaming(sid):
+        yield ev
 
 
-def reject_all_pending(sid: str) -> None:
+async def reject_all_pending(sid: str) -> None:
     """把某会话所有待批操作按拒绝落盘并清 sidecar(不 yield)。
     用于「审批未决、用户却发了新消息」:先把悬空协议合法地收尾,再走新消息。"""
-    pend = pending_store.read(sid)
+    pend = await asyncio.to_thread(pending_store.read, sid)
     if not pend:
         return
     for tc in pend["tool_calls"]:
-        session_store.append_message(sid, {
+        await asyncio.to_thread(session_store.append_message, sid, {
             "role": "tool", "tool_call_id": tc["id"],
             "content": "用户已拒绝此操作(发起了新消息)"})
-    pending_store.clear(sid)
+    await asyncio.to_thread(pending_store.clear, sid)
     logger.info("残留 pending 自动拒绝: sid=%s, 数量=%d", sid, len(pend["tool_calls"]))
