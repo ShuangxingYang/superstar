@@ -9,7 +9,10 @@ ToolRegistry 的三件事:
   1. register:登记「函数 + Pydantic 入参模型 + 描述」
   2. to_openai_schema:把入参模型转成 OpenAI function calling 的 JSON schema
   3. run:执行一次工具调用,三处自愈(未知工具/参数错/执行异常),永远返回字符串,绝不抛
+  4. run_async:async 版的 run,同步工具走 to_thread,async 工具直 await
 """
+import asyncio
+import inspect
 import logging
 from typing import Callable
 
@@ -34,6 +37,7 @@ class Tool:
         self.func = func
         self.args_model = args_model
         self.description = description
+        self.is_async = inspect.iscoroutinefunction(func)
 
 
 class ToolRegistry:
@@ -86,6 +90,32 @@ class ToolRegistry:
             return f"参数错误:{e}"                                 # ② 参数不对 → 喂回让模型改
         try:
             result = tool.func(args)
+            logger.info("工具执行完成: name=%s, result_len=%d", name, len(result))
+            return result
+        except SecurityError as e:
+            logger.warning("工具安全拦截: name=%s", name)
+            return f"安全拦截:{e}"                                 # ③a 越界
+        except Exception as e:  # noqa: BLE001
+            logger.warning("工具执行失败: name=%s, err=%s", name, type(e).__name__)
+            return f"工具执行失败:{e}"                             # ③b 任何异常 → 喂回,不崩流
+
+    async def run_async(self, name: str, raw_args: dict) -> str:
+        """async 版 run:async 工具直 await,同步工具 to_thread。
+        兜错逻辑与 run 完全一致(未知/参数错/安全/执行异常都返字符串)。"""
+        tool = self._tools.get(name)
+        if tool is None:
+            logger.warning("未知工具: name=%s", name)
+            return f"错误:未知工具 {name}"                       # ① 模型幻觉的工具名
+        try:
+            args = tool.args_model(**raw_args)                     # Pydantic 校验
+        except ValidationError as e:
+            logger.info("工具参数校验失败: name=%s", name)
+            return f"参数错误:{e}"                                 # ② 参数不对 → 喂回让模型改
+        try:
+            if tool.is_async:
+                result = await tool.func(args)
+            else:
+                result = await asyncio.to_thread(tool.func, args)
             logger.info("工具执行完成: name=%s, result_len=%d", name, len(result))
             return result
         except SecurityError as e:

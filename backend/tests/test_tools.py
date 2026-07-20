@@ -240,3 +240,69 @@ def test_to_openai_schema_subset_ignores_unknown():
     from app.agent.tools import registry
     names = {s["function"]["name"] for s in registry.to_openai_schema({"read_file", "nope"})}
     assert names == {"read_file"}
+
+
+# ============ async 工具支持 ============
+import asyncio
+
+
+async def _aecho(args: _EchoArgs) -> str:
+    """async 工具示例"""
+    return f"aecho:{args.text}"
+
+
+async def test_run_async_sync_tool():
+    """同步工具经 run_async 正常执行(内部走 to_thread)"""
+    r = ToolRegistry()
+    r.register("echo", _echo, _EchoArgs, "回声")
+    out = await r.run_async("echo", {"text": "hi"})
+    assert out == "echo:hi"
+
+
+async def test_run_async_async_tool():
+    """async 工具直 await"""
+    r = ToolRegistry()
+    r.register("aecho", _aecho, _EchoArgs, "异步回声")
+    out = await r.run_async("aecho", {"text": "hello"})
+    assert out == "aecho:hello"
+
+
+async def test_run_async_unknown_tool():
+    """未知工具 → 返回"未知工具" 错误串"""
+    r = ToolRegistry()
+    out = await r.run_async("nope", {})
+    assert "未知工具" in out
+
+
+async def test_run_async_bad_args():
+    """参数错 → 返回"参数错误" 错误串"""
+    r = ToolRegistry()
+    r.register("echo", _echo, _EchoArgs, "回声")
+    out = await r.run_async("echo", {})  # 缺 text 字段
+    assert "参数错误" in out
+
+
+async def test_run_async_security_error():
+    """SecurityError → 返回"安全拦截" 错误串"""
+    r = ToolRegistry()
+    r.register("bad", _escape, _EchoArgs, "x")
+    out = await r.run_async("bad", {"text": "a"})
+    assert "安全拦截" in out
+
+
+async def test_run_async_runtime_error():
+    """异常 → 返回"工具执行失败" 错误串"""
+    r = ToolRegistry()
+    r.register("bad", _boom, _EchoArgs, "x")
+    out = await r.run_async("bad", {"text": "a"})
+    assert "工具执行失败" in out
+
+
+def test_is_async_flag():
+    """Tool.is_async 标记正确反映函数是否为协程"""
+    r = ToolRegistry()
+    r.register("echo", _echo, _EchoArgs, "同步")
+    r.register("aecho", _aecho, _EchoArgs, "异步")
+
+    assert r._tools["echo"].is_async is False
+    assert r._tools["aecho"].is_async is True
